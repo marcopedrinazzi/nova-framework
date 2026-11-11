@@ -179,9 +179,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation gates, 
 
 Created and maintained by [fr0gger](https://github.com/fr0gger).
 
-## Optional Sys1 section
+## Optional Decision section
 
-Sys1 adds typed Noul, Choice and Score questions through OpenRouter or optional local Laya. NOVA converts
+Decision adds typed Noul, Choice and Score questions through OpenRouter or Ollama. NOVA converts
 the answers into predicates for `condition:`. It requires explicit activation;
 uncertain or unavailable required answers raise an evaluation error. See the
-[Sys1 rule, SDK and CLI guide](docs/sys1.md) and [runnable examples](examples/sys1/demo.py).
+[Decision rule, SDK and CLI guide](docs/decision.md) and [runnable examples](examples/decision/demo.py).

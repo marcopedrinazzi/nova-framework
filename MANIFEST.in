@@ -14,7 +14,6 @@ include setup.py
 include .github/PULL_REQUEST_TEMPLATE.md
 include .github/dependabot.yml
 include .github/workflows/ci.yml
-include .github/workflows/laya-compatibility.yml
 include .github/workflows/codeql.yml
 include .github/ISSUE_TEMPLATE/bug_report.yml
 include .github/ISSUE_TEMPLATE/feature_request.yml
@@ -38,4 +37,4 @@ recursive-include scripts *.py
 recursive-include tests *.py
 
 recursive-include docs *.md
-recursive-include examples/sys1 *.py *.nov
+recursive-include examples/decision *.py *.nov

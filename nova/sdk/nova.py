@@ -77,7 +77,7 @@ class Nova:
         on_flag: Optional[Callable[["ScanResult"], Any]] = None,
         ignore_invalid_rules: bool = False,
         debug: bool = False,
-        *, sys1_config=None, sys1_evaluator=None,
+        *, decision_config=None, decision_evaluator=None,
     ):
         """
         Initialize Nova SDK.
@@ -98,8 +98,8 @@ class Nova:
         """
         init_start = time.perf_counter()
 
-        self._sys1_options = sys1_config
-        self._sys1_evaluator = sys1_evaluator
+        self._decision_options = decision_config
+        self._decision_evaluator = decision_evaluator
         self._rules: List[NovaRule] = []
         self._rule_sources: Dict[str, str] = {}  # rule_name → source file path
         self._debug = debug
@@ -306,20 +306,20 @@ class Nova:
 
     def _initialize_matchers(self) -> None:
         """Create matchers for all rules, sharing evaluators."""
-        if any(rule.sys1 for rule in self._rules) and self._sys1_evaluator is None:
-            from nova.evaluators.sys1.factory import create_sys1_evaluator
-            self._sys1_evaluator = create_sys1_evaluator(self._sys1_options)
+        if any(rule.decision for rule in self._rules) and self._decision_evaluator is None:
+            from nova.evaluators.decision.factory import create_decision_evaluator
+            self._decision_evaluator = create_decision_evaluator(self._decision_options)
         for rule in self._rules:
             self._matchers[rule.name] = NovaMatcher(
                 rule=rule,
                 semantic_evaluator=self._semantic_evaluator,  # Share semantic evaluator
                 llm_evaluator=self._llm_evaluator,
                 create_llm_evaluator=False,  # Don't create new evaluators
-                sys1_config=self._sys1_options, sys1_evaluator=self._sys1_evaluator
+                decision_config=self._decision_options, decision_evaluator=self._decision_evaluator
             )
 
     def scan(self, text: str, debug: Optional[bool] = None, parallel: bool = True,
-             skip_llm: bool = False, *, sys1_state=None, skip_sys1=False) -> ScanResult:
+             skip_llm: bool = False, *, decision_state=None, skip_decision=False) -> ScanResult:
         """
         Scan text against all loaded rules.
 
@@ -349,14 +349,14 @@ class Nova:
         rule_warnings: Dict[str, List[str]] = {}
 
         causes = []
-        if any(rule.sys1 for rule in self._rules):
-            from nova.evaluators.sys1.engine import collect
-            from nova.core.sys1 import NovaEvaluationError
-            rules_with_llm = {rule.name for rule in self._rules if rule.llms or rule.sys1}
+        if any(rule.decision for rule in self._rules):
+            from nova.evaluators.decision.engine import collect
+            from nova.core.decision import NovaEvaluationError
+            rules_with_llm = {rule.name for rule in self._rules if rule.llms or rule.decision}
             early_block, skipped_llm_count = False, 0
             try:
-                results, causes = collect(self._rules, self._matchers, text, scan_text, context=sys1_state,
-                                          skip_llm=skip_llm, skip_sys1=skip_sys1, parallel=parallel)
+                results, causes = collect(self._rules, self._matchers, text, scan_text, context=decision_state,
+                                          skip_llm=skip_llm, skip_decision=skip_decision, parallel=parallel)
             except NovaEvaluationError as error:
                 partial = ScanResult(text, text, evaluation_complete=False)
                 raise NovaEvaluationError(partial, error.causes) from None
@@ -506,7 +506,7 @@ class Nova:
                 *[name for name, matched in matching_keywords.items() if matched],
                 *[name for name, matched in matching_semantics.items() if matched],
                 *[name for name, matched in matching_llm.items() if matched],
-                *result.get("matching_sys1", {}),
+                *result.get("matching_decision", {}),
             ]
 
             # Create RuleMatch
@@ -522,7 +522,7 @@ class Nova:
                 semantic_scores=result.get("semantic_scores", {}),
                 llm_scores=result.get("llm_scores", {}),
                 matched_patterns=matched_patterns,
-                matching_sys1=result.get("matching_sys1", {}),
+                matching_decision=result.get("matching_decision", {}),
             )
             matches.append(match)
 
@@ -550,8 +550,8 @@ class Nova:
             redactions=all_redactions,
             warnings=scan_warnings,
             rule_warnings=rule_warnings,
-            sys1_results={rule.name: result["sys1_results"] for rule, result in results if rule.sys1},
-            sys1_batches={rule.name: result.get("sys1_batches", []) for rule, result in results if rule.sys1},
+            decision_results={rule.name: result["decision_results"] for rule, result in results if rule.decision},
+            decision_batches={rule.name: result.get("decision_batches", []) for rule, result in results if rule.decision},
             evaluation_complete=not causes,
         )
 
@@ -577,11 +577,11 @@ class Nova:
             self._print_debug(text, scan_result, scan_elapsed_ms, fast_count, llm_count, skipped_llm_count, skip_reason)
 
         if causes:
-            from nova.core.sys1 import NovaEvaluationError
+            from nova.core.decision import NovaEvaluationError
             raise NovaEvaluationError(scan_result, causes)
         return scan_result
 
-    async def scan_async(self, text: str, *, sys1_state=None, skip_sys1=False, skip_llm=False) -> ScanResult:
+    async def scan_async(self, text: str, *, decision_state=None, skip_decision=False, skip_llm=False) -> ScanResult:
         """
         Async version of scan.
 
@@ -594,7 +594,7 @@ class Nova:
             ScanResult with all match details and actions
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, functools.partial(self.scan, text, sys1_state=sys1_state, skip_sys1=skip_sys1, skip_llm=skip_llm))
+        return await loop.run_in_executor(None, functools.partial(self.scan, text, decision_state=decision_state, skip_decision=skip_decision, skip_llm=skip_llm))
 
     def protect(
         self,
@@ -604,7 +604,7 @@ class Nova:
         on_block: Optional[Callable] = None,
         raise_on_block: bool = True,
         skip_llm: bool = False,
-        *, sys1_state_factory=None, skip_sys1=False,
+        *, decision_state_factory=None, skip_decision=False,
     ):
         """
         Decorator to protect a function with Nova scanning.
@@ -634,10 +634,10 @@ class Nova:
             action = Action(action)
 
         def decorator(func: Callable) -> Callable:
-            if any(rule.sys1 for rule in self._rules) or sys1_state_factory is not None:
-                from nova.sdk.sys1_protection import protect_sys1
-                return protect_sys1(self, func, action, severity, param_name, on_block, raise_on_block,
-                                   skip_llm, skip_sys1, sys1_state_factory)
+            if any(rule.decision for rule in self._rules) or decision_state_factory is not None:
+                from nova.sdk.decision_protection import protect_decision
+                return protect_decision(self, func, action, severity, param_name, on_block, raise_on_block,
+                                   skip_llm, skip_decision, decision_state_factory)
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs):
                 # Extract text to scan
@@ -846,16 +846,16 @@ class Nova:
         if self._rule_needs_llm(rule) and self._llm_evaluator is None:
             self._llm_evaluator = self._create_configured_llm_evaluator()
 
-        if rule.sys1 and self._sys1_evaluator is None:
-            from nova.evaluators.sys1.factory import create_sys1_evaluator
-            self._sys1_evaluator = create_sys1_evaluator(self._sys1_options)
+        if rule.decision and self._decision_evaluator is None:
+            from nova.evaluators.decision.factory import create_decision_evaluator
+            self._decision_evaluator = create_decision_evaluator(self._decision_options)
         self._rules.append(rule)
         self._matchers[rule.name] = NovaMatcher(
             rule=rule,
             semantic_evaluator=self._semantic_evaluator,  # Share the semantic evaluator
             llm_evaluator=self._llm_evaluator,
             create_llm_evaluator=False,
-            sys1_config=self._sys1_options, sys1_evaluator=self._sys1_evaluator
+            decision_config=self._decision_options, decision_evaluator=self._decision_evaluator
         )
 
     def add_policy_rule(self, pattern: str, config: Dict) -> None:

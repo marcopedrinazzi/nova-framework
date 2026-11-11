@@ -80,7 +80,7 @@ __all__ = [
     # Exceptions
     "NovaSDKError",
     "NovaEvaluationError",
-    "Sys1Config",
+    "DecisionConfig",
     "NovaBlockedError",
     "NovaConfigError",
     "NovaRedactionError",
@@ -94,4 +94,4 @@ __all__ = [
     "set_default_nova",
 ]
 
-from nova.evaluators.sys1.config import Sys1Config
+from nova.evaluators.decision.config import DecisionConfig

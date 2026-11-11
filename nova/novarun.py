@@ -520,36 +520,36 @@ def print_prompts_summary(results: List[Dict[str, Any]], prompts: List[str]):
         print(f"{Fore.WHITE}{i+1:<4} {result_text:<27} {Fore.YELLOW}{display_prompt}")
 
 
-def run_sys1_cli(args, parser, blocks, prompts):
-    """Use the shared scanner for Sys1 rules, preserving legacy CLI output elsewhere."""
+def run_decision_cli(args, parser, blocks, prompts):
+    """Use the shared scanner for Decision rules, preserving legacy CLI output elsewhere."""
     import json
     import time
     from nova.core.scanner import NovaScanner
-    from nova.core.sys1 import NovaEvaluationError
-    from nova.evaluators.sys1.config import Sys1Config
-    from nova.evaluators.sys1.state import snapshot_state
+    from nova.core.decision import NovaEvaluationError
+    from nova.evaluators.decision.config import DecisionConfig
+    from nova.evaluators.decision.state import snapshot_state
 
     options = {}
-    if args.sys1_enabled is not None:
-        options["enabled"] = args.sys1_enabled
-    if args.sys1_model is not None:
-        options["model"] = args.sys1_model
-    if args.sys1_provider is not None:
-        options["provider"] = args.sys1_provider
-    if args.sys1_device is not None:
-        options["device"] = args.sys1_device
+    if args.decision_enabled is not None:
+        options["enabled"] = args.decision_enabled
+    if args.decision_model is not None:
+        options["model"] = args.decision_model
+    if args.decision_provider is not None:
+        options["provider"] = args.decision_provider
+    if args.decision_host is not None:
+        options["host"] = args.decision_host
     try:
-        config = Sys1Config.resolve(options)
+        config = DecisionConfig.resolve(options)
         rules = [NovaParser().parse(block) for block in (blocks[:1] if args.single else blocks)]
         context = None
-        if args.sys1_state:
-            with open(args.sys1_state, encoding="utf-8") as stream:
+        if args.decision_state:
+            with open(args.decision_state, encoding="utf-8") as stream:
                 payload = stream.read(config.max_request_bytes + 1)
             if len(payload.encode("utf-8")) > config.max_request_bytes:
-                raise ValueError("Sys1 context exceeds request size limit")
+                raise ValueError("Decision context exceeds request size limit")
             context = json.loads(payload)
             snapshot_state("", context, config.max_request_bytes)
-        scanner = NovaScanner(rules, llm_type=args.llm, llm_model=args.model, sys1_config=config)
+        scanner = NovaScanner(rules, llm_type=args.llm, llm_model=args.model, decision_config=config)
     except (ValueError, OSError, NovaParserError) as error:
         parser.error(str(error))
     incomplete = False
@@ -557,20 +557,20 @@ def run_sys1_cli(args, parser, blocks, prompts):
         started = time.perf_counter()
         causes = []
         try:
-            details = scanner.scan_with_details(prompt, sys1_state=context)
+            details = scanner.scan_with_details(prompt, decision_state=context)
         except NovaEvaluationError as error:
             details = error.partial_result
             incomplete = True
             causes = error.causes
         # No prompt/context or credentials in default output. Evidence remains inspectable.
         output = {"prompt_index": index, "evaluation_complete": details.get("evaluation_complete", False),
-                  "matches": details.get("matches", []), "sys1_results": details.get("sys1_results", {})}
+                  "matches": details.get("matches", []), "decision_results": details.get("decision_results", {})}
         elapsed_ms = (time.perf_counter() - started) * 1000
         if causes:
             output["errors"] = sorted(set(causes))
         if args.verbose:
             output["elapsed_ms"] = round(elapsed_ms, 3)
-            output["sys1_config"] = {"enabled": config.enabled, "provider": config.provider, "model": config.model}
+            output["decision_config"] = {"enabled": config.enabled, "provider": config.provider, "model": config.model}
             output["rule_details"] = {}
             for name, result in details.get("detailed_results", {}).items():
                 debug = result.get("debug", {})
@@ -581,15 +581,15 @@ def run_sys1_cli(args, parser, blocks, prompts):
                     "matching_keywords": result.get("matching_keywords", {}),
                     "matching_semantics": result.get("matching_semantics", {}),
                     "matching_llm": result.get("matching_llm", {}),
-                    "matching_sys1": result.get("matching_sys1", {}),
+                    "matching_decision": result.get("matching_decision", {}),
                     "evaluation_warnings": debug.get("evaluation_warnings", []),
-                    "sys1_batches": result.get("sys1_batches", []),
+                    "decision_batches": result.get("decision_batches", []),
                 }
         if args.json:
             print(json.dumps(output, ensure_ascii=False))
         else:
-            from nova.utils.sys1_output import format_sys1_output
-            print(format_sys1_output(details, index, elapsed_ms, config, args.verbose, causes))
+            from nova.utils.decision_output import format_decision_output
+            print(format_decision_output(details, index, elapsed_ms, config, args.verbose, causes))
     if incomplete:
         sys.exit(1)
 
@@ -617,16 +617,16 @@ def main():
     # Keep the -a/--all flag for backward compatibility, but make it a no-op (all rules is now default)
     parser.add_argument('-a', '--all', action='store_true', help='Check against all rules in the file (default behavior)')
     
-    sys1_group = parser.add_mutually_exclusive_group()
-    sys1_group.add_argument('--sys1', dest='sys1_enabled', action='store_true', default=None,
-                           help='Enable Sys1 decisions using the selected provider')
-    sys1_group.add_argument('--skip-sys1', dest='sys1_enabled', action='store_false',
-                           help='Disable Sys1; unresolved required checks are errors')
-    parser.add_argument('--sys1-provider', choices=('openrouter', 'laya'), help='Sys1 provider (default: openrouter)')
-    parser.add_argument('--sys1-model', help='OpenRouter model ID or prepared local Laya directory')
-    parser.add_argument('--sys1-device', help='Laya device: cpu (default), cuda or cuda:N')
-    parser.add_argument('--sys1-state', metavar='FILE', help='JSON context for Sys1; paired with each prompt')
-    parser.add_argument('--json', action='store_true', help='Emit Sys1 results as JSON Lines instead of a readable summary')
+    decision_group = parser.add_mutually_exclusive_group()
+    decision_group.add_argument('--decision', dest='decision_enabled', action='store_true', default=None,
+                           help='Enable Decision decision using the selected provider')
+    decision_group.add_argument('--skip-decision', dest='decision_enabled', action='store_false',
+                           help='Disable Decision; unresolved required checks are errors')
+    parser.add_argument('--decision-provider', choices=('openrouter', 'ollama'), help='Decision provider (default: openrouter)')
+    parser.add_argument('--decision-model', help='OpenRouter model ID or Ollama decision model name')
+    parser.add_argument('--decision-host', help='Ollama server URL (default: OLLAMA_HOST or http://localhost:11434)')
+    parser.add_argument('--decision-state', metavar='FILE', help='JSON context for Decision; paired with each prompt')
+    parser.add_argument('--json', action='store_true', help='Emit Decision results as JSON Lines instead of a readable summary')
     args = parser.parse_args()
     
     try:
@@ -659,10 +659,10 @@ def main():
         print(f"{Fore.RED}Error parsing rule file: {e}")
         sys.exit(1)
     from nova.core.structure import sections
-    if any("sys1" in sections(block)[1] for block in rule_blocks):
-        return run_sys1_cli(args, parser, rule_blocks, prompts)
+    if any("decision" in sections(block)[1] for block in rule_blocks):
+        return run_decision_cli(args, parser, rule_blocks, prompts)
     if args.json:
-        parser.error("--json currently requires a rule file with a sys1 section")
+        parser.error("--json currently requires a rule file with a decision section")
     if not args.single and len(rule_blocks) > 1:
         # Extract all rules from the file
         if not rule_blocks:

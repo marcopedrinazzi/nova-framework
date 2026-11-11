@@ -26,7 +26,6 @@ SDIST_REQUIRED_FILES = {
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/dependabot.yml",
     ".github/workflows/ci.yml",
-    ".github/workflows/laya-compatibility.yml",
     ".github/workflows/codeql.yml",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
     ".github/ISSUE_TEMPLATE/feature_request.yml",
@@ -34,15 +33,15 @@ SDIST_REQUIRED_FILES = {
     "scripts/check_secrets.py",
     "scripts/smoke_wheel.py",
     "scripts/verify_artifacts.py",
-    "docs/sys1.md",
-    "docs/design/sys1-section.md",
-    "docs/design/laya-integration.md",
-    "docs/design/laya-validation.md",
-    "examples/sys1/demo.py",
-    "examples/sys1/evaluate_quality.py",
-    "examples/sys1/agent_action_risk.nov",
-    "tests/test_sys1_parser.py",
-    "tests/test_sys1_integration.py",
+    "docs/decision.md",
+    "docs/design/decision-section.md",
+    "examples/decision/demo.py",
+    "examples/decision/evaluate_quality.py",
+    "examples/decision/agent_action_risk.nov",
+    "tests/test_decision_parser.py",
+    "tests/test_decision_integration.py",
+    "tests/test_ollama_decision.py",
+    "tests/test_ollama_decision_live.py",
     "tests/test_cli.py",
     "tests/test_condition.py",
     "tests/test_issue_22.py",
@@ -55,29 +54,25 @@ SDIST_REQUIRED_FILES = {
     "tests/test_static_security.py",
     "nova/_version.py",
     "nova/utils/log_buffer.py",
-    "nova/core/sys1.py",
-    "nova/evaluators/sys1/openrouter.py",
-    "nova/evaluators/sys1/laya.py",
-    "nova/evaluators/sys1/models.py",
-    "nova/evaluators/sys1/factory.py",
-    "tests/test_laya.py",
-    "tests/test_laya_models.py",
-    "tests/test_laya_runtime.py",
-    "tests/test_laya_live.py",
-    "examples/sys1/compare_providers.py",
-    "nova/sdk/sys1_protection.py",
+    "nova/core/decision.py",
+    "nova/evaluators/decision/openrouter.py",
+    "nova/evaluators/decision/factory.py",
+    "nova/evaluators/decision/http.py",
+    "nova/evaluators/decision/ollama.py",
+    "examples/decision/compare_providers.py",
+    "nova/sdk/decision_protection.py",
 }
 
 WHEEL_REQUIRED_FILES = {
     "nova/sdk/README.md",
     "nova/_version.py",
     "nova/utils/log_buffer.py",
-    "nova/core/sys1.py",
-    "nova/evaluators/sys1/openrouter.py",
-    "nova/evaluators/sys1/laya.py",
-    "nova/evaluators/sys1/models.py",
-    "nova/evaluators/sys1/factory.py",
-    "nova/sdk/sys1_protection.py",
+    "nova/core/decision.py",
+    "nova/evaluators/decision/openrouter.py",
+    "nova/evaluators/decision/factory.py",
+    "nova/evaluators/decision/http.py",
+    "nova/evaluators/decision/ollama.py",
+    "nova/sdk/decision_protection.py",
 }
 
 REQUIRED_PROJECT_URL_LABELS = {
@@ -143,9 +138,9 @@ def main() -> None:
         (sdist, normalized_sdist_names(sdist, version)),
         (wheel, wheel_names(wheel)),
     ):
-        stale = sorted(name for name in names if name.startswith("nova/") and "jev" in name)
+        stale = sorted(name for name in names if name.startswith("nova/") and any(old in name for old in ("jev", "sys1", "decision/laya.py", "decision/models.py")))
         if stale:
-            raise SystemExit(f"{artifact} contains obsolete Jev module paths: {stale}")
+            raise SystemExit(f"{artifact} contains obsolete decision module paths: {stale}")
 
     metadata = wheel_metadata(wheel, version)
     for label in REQUIRED_PROJECT_URL_LABELS:

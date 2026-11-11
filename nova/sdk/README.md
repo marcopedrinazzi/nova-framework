@@ -341,20 +341,20 @@ pytest tests/test_sdk.py -v
 pytest tests/test_sdk.py::TestNovaPolicy -v
 ```
 
-## Optional Sys1 evaluation
+## Optional Decision evaluation
 
-Local Laya uses the same rules and results. Install this checkout with `.[laya]`,
-prepare a checkpoint with `nova-sys1 prepare-laya`, then pass
-`sys1_config={"enabled": True, "provider": "laya", "model": "/path/to/prepared-model", "device": "cpu"}`.
-See the [local provider guide](../../docs/sys1.md#local-laya-provider) for explicit
-setup, CUDA selection, input limits and queue versus inference timeouts.
+Ollama uses the same rules and results through its `/v1/systemone` endpoint. Pass
+`decision_config={"enabled": True, "provider": "ollama", "model": "nimble"}`.
+Set `host` in that configuration or `OLLAMA_HOST` to select your server. No Ollama
+Python SDK or local ML dependency is needed. See the
+[Ollama provider guide](../../docs/decision.md#ollama-provider).
 
-Pass `sys1_config={"enabled": True}` to `Nova` to enable OpenRouter Decisions, and
-pass explicit context with `scan(text, sys1_state=context)`. `scan_async` supports
-the same options. `skip_llm=True` does not disable Sys1.
+Pass `decision_config={"enabled": True}` to `Nova` to enable OpenRouter Decisions, and
+pass explicit context with `scan(text, decision_state=context)`. `scan_async` supports
+the same options. `skip_llm=True` does not disable Decision.
 
-Inspect `result.sys1_results` for all typed answers and `result.sys1_batches` for
+Inspect `result.decision_results` for all typed answers and `result.decision_batches` for
 request metadata. Catch `NovaEvaluationError` for unresolved required checks;
 its `partial_result` preserves definite findings but cannot report allowed or
-clean. Protection decorators accept `sys1_state_factory` and never execute after
-an unresolved required check. See the [full guide](../../docs/sys1.md).
+clean. Protection decorators accept `decision_state_factory` and never execute after
+an unresolved required check. See the [full guide](../../docs/decision.md).

@@ -9,7 +9,7 @@ Description: Rule definitions and pattern classes for pattern matching
 
 from dataclasses import dataclass, field
 from typing import Dict
-from nova.core.sys1 import Sys1Pattern
+from nova.core.decision import DecisionPattern
 
 
 @dataclass
@@ -72,4 +72,4 @@ class NovaRule:
     semantics: Dict[str, SemanticPattern] = field(default_factory=dict)
     llms: Dict[str, LLMPattern] = field(default_factory=dict)
     condition: str = ""
-    sys1: Dict[str, Sys1Pattern] = field(default_factory=dict)
+    decision: Dict[str, DecisionPattern] = field(default_factory=dict)

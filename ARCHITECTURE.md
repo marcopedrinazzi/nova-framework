@@ -76,26 +76,25 @@ When `--config` is passed explicitly, a missing or malformed file fails fast ins
 
 The 2026 cleanup split the two largest modules while preserving import paths: `nova/evaluators/llm.py` became the `nova/evaluators/llm/` package, and `NovaRuleFileParser` moved to `nova/core/rule_file.py` (re-exported from `nova.core.parser`). Remaining larger modules, in case future splits are wanted: `nova/core/parser.py` (~900 lines, single `NovaParser` class — split candidate: move condition-section validation into a helper module) and `nova/sdk/nova.py` (~870 lines — split candidate: extract rule-loading and fast-path scan scheduling). Neither exceeds the 1,000-line threshold today.
 
-## Sys1 evaluation path
+## Decision evaluation path
 
-Rules with `sys1:` use typed declarations in `nova/core/sys1.py`, a lexical
+Rules with `decision:` use typed declarations in `nova/core/decision.py`, a lexical
 structural reader shared by the single-rule and file parsers, and the restricted
-three-state condition compiler in `nova/evaluators/sys1/condition.py`. Legacy-only
+three-state condition compiler in `nova/evaluators/decision/condition.py`. Legacy-only
 rules retain their condition evaluator and serialized results.
 
 `projection.py` separates provider question construction, answer validation and
-predicate conversion. `openrouter.py` implements the batch transport using
-requests; `config.py` and `state.py` control activation and the explicit input
-boundary. The scan-local engine runs keywords, semantics, a mixed Sys1 batch, then
+predicate conversion. `http.py` implements shared batch transport using requests;
+`openrouter.py` and `ollama.py` select the provider endpoint and request fields; `config.py` and `state.py` control activation and the explicit input
+boundary. The scan-local engine runs keywords, semantics, a mixed Decision batch, then
 LLM checks, pruning resolved condition branches. SDK fast and model phases share
 evidence without persistent caches. Core matcher, scanner and SDK all use this
 engine. Protection wrappers propagate incomplete evaluations before invocation.
 
-See the [contract](docs/design/sys1-section.md) and [usage guide](docs/sys1.md) for
+See the [contract](docs/design/decision-section.md) and [usage guide](docs/decision.md) for
 state envelopes, uncertainty, transport limits and configuration precedence.
 
-The section name is provider-independent. The factory selects OpenRouter or an optional local Laya adapter. Laya uses
-explicitly prepared, revision-pinned assets, lazy serialized inference and
-token-exact preflight. The [Laya source review and integration design](docs/design/laya-integration.md)
-and [usage guide](docs/sys1.md#local-laya-provider) describe setup, diagnostics and
-the limits of in-process timeouts.
+The section name is provider-independent. The factory selects OpenRouter Decisions or
+Ollama's `/v1/systemone` endpoint. Both reuse bounded HTTP transport and answer
+validation. Ollama manages model loading and hardware; NOVA needs no local ML runtime
+or provider SDK. See the [Ollama guide](docs/decision.md#ollama-provider).

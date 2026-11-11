@@ -68,7 +68,7 @@ class NovaMatcher:
                  keyword_evaluator: Optional[DefaultKeywordEvaluator] = None,
                  semantic_evaluator: Optional[Any] = None,  # DefaultSemanticEvaluator might not be available
                  llm_evaluator: Optional[Any] = None,       # LLMEvaluator might not be available
-                 create_llm_evaluator: bool = True, *, sys1_config=None, sys1_evaluator=None):
+                 create_llm_evaluator: bool = True, *, decision_config=None, decision_evaluator=None):
         """
         Initialize the matcher with a rule and optional custom evaluators.
         Only initializes evaluators when needed based on rule content.
@@ -82,14 +82,14 @@ class NovaMatcher:
                                   If False, and llm_evaluator is None, no LLM evaluations will be performed.
         """
         self.rule = rule
-        self._sys1_options = sys1_config
-        self.sys1_config = None
-        self.sys1_evaluator = sys1_evaluator
-        if rule and rule.sys1:
-            from nova.evaluators.sys1.config import Sys1Config
-            from nova.evaluators.sys1.factory import create_sys1_evaluator
-            self.sys1_config = Sys1Config.resolve(sys1_config)
-            self.sys1_evaluator = sys1_evaluator if sys1_evaluator is not None else create_sys1_evaluator(self.sys1_config)
+        self._decision_options = decision_config
+        self.decision_config = None
+        self.decision_evaluator = decision_evaluator
+        if rule and rule.decision:
+            from nova.evaluators.decision.config import DecisionConfig
+            from nova.evaluators.decision.factory import create_decision_evaluator
+            self.decision_config = DecisionConfig.resolve(decision_config)
+            self.decision_evaluator = decision_evaluator if decision_evaluator is not None else create_decision_evaluator(self.decision_config)
         
         # Always initialize keyword evaluator since it's lightweight
         self.keyword_evaluator = keyword_evaluator or DefaultKeywordEvaluator()
@@ -167,11 +167,11 @@ class NovaMatcher:
             rule: The new NovaRule to match against
         """
         self.rule = rule
-        if rule and rule.sys1 and self.sys1_config is None:
-            from nova.evaluators.sys1.config import Sys1Config
-            from nova.evaluators.sys1.factory import create_sys1_evaluator
-            self.sys1_config = Sys1Config.resolve(self._sys1_options)
-            self.sys1_evaluator = self.sys1_evaluator if self.sys1_evaluator is not None else create_sys1_evaluator(self.sys1_config)
+        if rule and rule.decision and self.decision_config is None:
+            from nova.evaluators.decision.config import DecisionConfig
+            from nova.evaluators.decision.factory import create_decision_evaluator
+            self.decision_config = DecisionConfig.resolve(self._decision_options)
+            self.decision_evaluator = self.decision_evaluator if self.decision_evaluator is not None else create_decision_evaluator(self.decision_config)
         self._precompile_patterns()
         # Update cached condition analysis for new rule
         if rule:
@@ -255,7 +255,7 @@ class NovaMatcher:
         
         return needed_patterns
         
-    def check_prompt(self, prompt: str, skip_llm: bool = False, *, sys1_state=None, skip_sys1=False) -> Dict[str, Any]:
+    def check_prompt(self, prompt: str, skip_llm: bool = False, *, decision_state=None, skip_decision=False) -> Dict[str, Any]:
         """
         Check if a prompt matches the rule.
 
@@ -269,11 +269,11 @@ class NovaMatcher:
         Returns:
             Dictionary containing match results and details
         """
-        if self.rule.sys1:
-            from nova.evaluators.sys1.engine import collect
-            from nova.core.sys1 import NovaEvaluationError
+        if self.rule.decision:
+            from nova.evaluators.decision.engine import collect
+            from nova.core.decision import NovaEvaluationError
             results, causes = collect([self.rule], {self.rule.name: self}, prompt, prompt,
-                                      context=sys1_state, skip_llm=skip_llm, skip_sys1=skip_sys1, parallel=False)
+                                      context=decision_state, skip_llm=skip_llm, skip_decision=skip_decision, parallel=False)
             result = results[0][1]
             if causes:
                 raise NovaEvaluationError(result, causes)

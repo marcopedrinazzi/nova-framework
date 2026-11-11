@@ -3,16 +3,15 @@
 ## [Unreleased]
 
 ### Added
-- Optional local Laya provider for `sys1:` with explicit model preparation, CPU/CUDA device selection, token-exact overflow checks, native results and strict incomplete-evaluation errors.
-- `nova-sys1 prepare-laya`, the isolated `[laya]` installation extra, `--sys1-provider` and `--sys1-device`, and an opt-in provider comparison harness.
-- Optional `sys1:` declarations for Noul, Choice and Score through OpenRouter Decisions.
+- Ollama decision models through `/v1/systemone`, with configurable host and model, shared bounded HTTP transport, typed results and incomplete-evaluation errors.
+- Optional `decision:` declarations for Noul, Choice and Score through OpenRouter Decisions.
 - Three-state predicates, mixed batches, explicit context, rich diagnostics and strict incomplete-evaluation errors across core, SDK, decorators and CLI.
-- `--sys1`, `--skip-sys1`, `--sys1-model` and `--sys1-state` CLI options; separate Sys1 configuration and explicit activation.
+- `--decision`, `--skip-decision`, `--decision-model` and `--decision-state` CLI options; separate Decision configuration and explicit activation.
 - Offline regression tests, opt-in synthetic live smoke test, typed examples and a labelled evaluation harness.
 
 ### Changed
-- Renamed the unreleased `jev:` section to provider-independent `sys1:`, including CLI flags, SDK arguments, configuration, diagnostics and module paths. See `docs/sys1.md` for migration; the OpenRouter model identifier remains `typesafe/jev-1.13`.
-- Added a source-based Laya review and local-provider integration design in `docs/design/laya-integration.md`.
+- Replaced the unreleased direct Laya runtime with Ollama; removed the `[laya]` extra, model preparation command and device settings. Ollama manages local models.
+- Renamed the unreleased `sys1:` section (previously `jev:`) to provider-independent `decision:`, including CLI flags, SDK arguments, configuration, diagnostics and module paths. See `docs/decision.md` for migration; the default OpenRouter model is `typesafe/jev-1.14`.
 - Rule boundaries now use a shared lexical reader for nested blocks, quoted strings, regex literals and comments. Legacy rule behavior and LLM temperature semantics remain unchanged.
 
 ## [0.3.1] - 2026-09-21
