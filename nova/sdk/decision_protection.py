@@ -1,4 +1,4 @@
-"""Argument-bound pre-execution checks for Decision protection decorators."""
+"""Argument-bound pre-execution checks shared by all SDK protection decorators."""
 
 import asyncio
 import functools

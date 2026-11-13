@@ -73,18 +73,34 @@ def test_unknown_never_becomes_negative_or_allowed():
     assert result.decision_results["Risk"]["$operation"]["answer"]["confidence"] == .4
 
 
-def test_definite_block_survives_another_rule_failure():
+def test_definite_block_skips_unresolved_decision_checks():
     legacy = NovaParser().parse('rule Block {\nkeywords:\n$x = "secret"\ncondition:\n$x\n}')
     nova = Nova(rules=[rule(), legacy], default_action=Action.BLOCK)
-    with pytest.raises(NovaEvaluationError) as caught:
-        nova.scan("secret")
-    assert caught.value.result.blocked
-    assert caught.value.result.blocked_rules == ["Block"]
-    assert not caught.value.result.allowed
-    with pytest.raises(NovaEvaluationError) as caught:
-        nova.scan("secret", decision_state={"unsupported": object()})
-    assert caught.value.result.blocked
-    assert "invalid_state" in caught.value.causes
+    for context in (None, {"unsupported": object()}):
+        result = nova.scan("secret", decision_state=context)
+        assert result.blocked and result.evaluation_complete
+        assert result.blocked_rules == ["Block"]
+        assert not result.allowed
+        assert all(entry["reason"] == "early_block" for entry in result.decision_results["Risk"].values())
+
+
+@pytest.mark.parametrize("action", [Action.BLOCK, Action.FLAG])
+@pytest.mark.parametrize("parallel", [False, True])
+def test_keyword_block_skips_models_but_flag_does_not(action, parallel):
+    keyword = NovaParser().parse('rule Keyword {\nkeywords:\n$x = "secret"\ncondition:\n$x\n}')
+    legacy_llm = NovaParser().parse('rule LegacyLlm {\nllm:\n$x = "Unsafe?"(0.1)\ncondition:\nllm.$x\n}')
+    evaluator = FixtureEvaluator(noul=.1)
+    nova = Nova(rules=[rule("decision.$scope"), legacy_llm, keyword],
+                default_action=action, decision_config={"enabled": True}, decision_evaluator=evaluator)
+    llm = Mock()
+    llm.evaluate_prompt.return_value = (False, .9, {})
+    nova._matchers["LegacyLlm"].llm_evaluator = llm
+    result = nova.scan("secret", parallel=parallel)
+    expected_calls = 0 if action == Action.BLOCK else 1
+    assert len(evaluator.calls) == expected_calls
+    assert llm.evaluate_prompt.call_count == expected_calls
+    assert result.evaluation_complete
+    assert result.blocked == (action == Action.BLOCK)
 
 
 def test_llm_remains_independent_and_uses_temperature():
@@ -229,3 +245,61 @@ def test_irrelevant_invalid_context_agrees_across_entry_points():
     assert NovaMatcher(r).check_prompt("secret", decision_state=context)["matched"]
     assert NovaScanner([r]).scan_with_details("secret", decision_state=context)["matched_any"]
     assert Nova(rules=[r]).scan("secret", decision_state=context).matches
+
+
+@pytest.mark.parametrize("kind", ["llm", "decision"])
+@pytest.mark.parametrize("add_after_decoration", [False, True])
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_protection_scans_default_prompt_with_current_rules(kind, add_after_decoration, async_mode, monkeypatch):
+    from nova.sdk.exceptions import NovaBlockedError
+
+    evaluator = FixtureEvaluator()
+    nova = Nova(default_action=Action.BLOCK, decision_config={"enabled": True}, decision_evaluator=evaluator)
+    llm = Mock()
+    llm.evaluate_prompt.return_value = (True, .9, {})
+    monkeypatch.setattr(nova, "_create_configured_llm_evaluator", lambda: llm)
+    detection = rule("decision.$scope") if kind == "decision" else NovaParser().parse(
+        'rule Llm {\nllm:\n$x = "Unsafe?"(0.1)\ncondition:\nllm.$x\n}')
+    if not add_after_decoration:
+        nova.add_rule(detection)
+    calls = []
+
+    def run(prompt="synthetic"):
+        calls.append(prompt)
+
+    async def run_async(prompt="synthetic"):
+        calls.append(prompt)
+
+    protected = nova.protect()(run_async if async_mode else run)
+    if add_after_decoration:
+        nova.add_rule(detection)
+    with pytest.raises(NovaBlockedError):
+        if async_mode:
+            asyncio.run(protected())
+        else:
+            protected()
+    assert not calls
+    assert len(evaluator.calls) == (1 if kind == "decision" else 0)
+    assert llm.evaluate_prompt.call_count == (1 if kind == "llm" else 0)
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_protection_keeps_skip_decision_after_dynamic_rule_addition(async_mode):
+    evaluator = FixtureEvaluator()
+    nova = Nova(decision_config={"enabled": True}, decision_evaluator=evaluator)
+    calls = []
+
+    def run(prompt):
+        calls.append(prompt)
+
+    async def run_async(prompt):
+        calls.append(prompt)
+
+    protected = nova.protect(skip_decision=True)(run_async if async_mode else run)
+    nova.add_rule(rule("decision.$scope"))
+    with pytest.raises(NovaEvaluationError):
+        if async_mode:
+            asyncio.run(protected("synthetic"))
+        else:
+            protected("synthetic")
+    assert not evaluator.calls and not calls

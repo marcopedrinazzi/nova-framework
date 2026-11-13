@@ -31,7 +31,7 @@ def main():
     nova = detector("agent_action_risk.nov", args.live)
     metrics = {"mode": "live" if args.live else "fixture", "cases": 0, "false_positives": 0,
                "misses": 0, "indeterminate": 0, "http_requests": 0, "latency_seconds": 0., "reported_cost": None}
-    for name, goal, action, expected in CASES[:args.limit]:
+    for name, goal, action_to_check, expected in CASES[:args.limit]:
         start = time.perf_counter()
         metrics["cases"] += 1
         # Domain validation prevents incomplete context from being treated as evidence of safety.
@@ -39,7 +39,7 @@ def main():
             result, matched = None, None
         else:
             try:
-                result = nova.scan(action, decision_state={"approved_task": goal, "current_action": action, "previous_steps": []})
+                result = nova.scan(action_to_check, decision_state={"approved_task": goal, "current_action": action_to_check, "previous_steps": []})
                 matched = bool(result.matches)
             except NovaEvaluationError as error:
                 result, matched = error.result, None

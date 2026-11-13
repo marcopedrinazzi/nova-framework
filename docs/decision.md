@@ -103,6 +103,11 @@ another rule fails. An irrelevant failed check does not invalidate a condition
 already determined by other evidence. A negative rule result does not certify
 safety, and task deviation alone is not proof of compromise.
 
+In the Python SDK, a keyword or semantic match whose policy action is `BLOCK`
+skips remaining Decision and LLM calls, following the existing LLM evaluation
+behavior. The scan returns the confirmed block; pending Decision checks are marked
+`skipped` with reason `early_block`. A `FLAG` match does not stop model evaluation.
+
 ## SDK and explicit context
 
 ```python
@@ -352,13 +357,22 @@ and use `provider="ollama"` with the model name it serves.
 
 ### Provider comparison and verification
 
-- [ ] Test a local Ollama run with an installed decision model; successful live inference is still unverified.
-
 ```sh
-python examples/decision/compare_providers.py --ollama-model nimble --limit 9
-# Explicitly also sends synthetic inputs to OpenRouter:
+# Compare multiple local models:
+python examples/decision/compare_providers.py --ollama-model laya:latest nimble --limit 9
+# OpenRouter only (sends synthetic inputs to OpenRouter):
+python examples/decision/compare_providers.py --openrouter-model typesafe/jev-1.14 --config /tmp/nova-config --limit 9
+# Compare both providers; each model flag accepts multiple IDs and can be repeated:
+python examples/decision/compare_providers.py --ollama-model laya:latest --openrouter-model typesafe/jev-1.14 --config /tmp/nova-config --limit 9
+# --openrouter is shorthand for --openrouter-model typesafe/jev-1.14:
 python examples/decision/compare_providers.py --ollama-model nimble --limit 9 --openrouter
 ```
+
+JSON results are grouped as `providers[provider][model]`; this adds a model level
+to the previous output format. Duplicate model IDs within a provider run once.
+
+Each labelled case pairs an `approved_task` with an `action_to_check`. The action
+is scanned as text and passed to the rule as `context.current_action`.
 
 The small harness reports false positives, misses, uncertainty, errors, latency,
 HTTP requests and reported cost. It is an integration aid, not evidence of general

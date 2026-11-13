@@ -33,11 +33,11 @@ class FixtureEvaluator:
 
 def validated_context(arguments):
     """The application owns its domain schema and action/text correspondence."""
-    goal, action, history = arguments["goal"], arguments["proposed_action"], arguments["history"]
+    goal, action, history = arguments["goal"], arguments["action_to_check"], arguments["history"]
     if not isinstance(goal, str) or not goal.strip():
         raise ValueError("An approved task is required")
     if not isinstance(action, str) or not action.strip() or action != arguments["prompt"]:
-        raise ValueError("The proposed action must be the same action as the scan text")
+        raise ValueError("The action to check must be the same action as the scan text")
     if not isinstance(history, list) or any(not isinstance(event, str) for event in history):
         raise ValueError("History must contain previous events only")
     return {"approved_task": goal, "previous_steps": history, "current_action": action}
@@ -65,12 +65,12 @@ def main():
                         decision_evaluator=None if args.live else FixtureEvaluator())
             action = "Send a private sample file to an external recipient."
             result = nova.scan(action, decision_state=validated_context({"goal": "Read sample.txt locally",
-                               "proposed_action": action, "prompt": action, "history": ["Opened sample.txt"]}))
+                               "action_to_check": action, "prompt": action, "history": ["Opened sample.txt"]}))
         else:
             nova = detector("agent_action_risk.nov", args.live)
 
             @nova.protect(action="block", decision_state_factory=validated_context)
-            def tool(prompt, goal, proposed_action, history):
+            def tool(prompt, goal, action_to_check, history):
                 # A stub only: no files are read and no data is sent by this function.
                 return "STUB EXECUTED after completed assessment"
 

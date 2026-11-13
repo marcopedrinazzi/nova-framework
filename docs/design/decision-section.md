@@ -54,6 +54,9 @@ count declared predicates, including pending ones. Legacy-only conditions retain
 their current evaluator. A condition resolved independently of an unknown is
 valid; otherwise scans raise NovaEvaluationError carrying partial results.
 Partial results retain definite blocks but cannot report clean or allowed.
+As with legacy LLM evaluation, the SDK skips remaining model calls after a
+definite BLOCK in the fast phase. Such a scan returns the block; pending Decision
+checks are marked skipped with reason `early_block`. FLAG matches do not stop evaluation.
 Protected functions never run after unresolved required evaluation.
 
 ## Transport and state

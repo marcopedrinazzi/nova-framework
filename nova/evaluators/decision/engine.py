@@ -108,7 +108,7 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
     return result, progress
 
 
-def collect(rules, matchers, original_text, text, *, context=None, skip_llm=False, skip_decision=False, parallel=True):
+def collect(rules, matchers, original_text, text, *, context=None, skip_llm=False, skip_decision=False, parallel=True, stop_on_match=None):
     """Fast pass then model pass, retaining evidence locally and all definite findings."""
     decision_matchers = [matchers[rule.name] for rule in rules if rule.decision]
     limit = min(matcher.decision_config.max_request_bytes for matcher in decision_matchers)
@@ -134,6 +134,17 @@ def collect(rules, matchers, original_text, text, *, context=None, skip_llm=Fals
                 if can_llm_change_outcome(rule.condition, debug.get("all_keyword_matches", {}),
                                           debug.get("all_semantic_matches", {})):
                     pending.append((rule, None))
+
+    if stop_on_match and any(results[rule.name]["matched"] and stop_on_match(rule) for rule in rules):
+        for rule, progress in pending:
+            if progress is not None:
+                for entry in progress.decision.values():
+                    if entry.status == "pending":
+                        entry.status, entry.reason = "skipped", "early_block"
+                results[rule.name]["decision_results"] = {
+                    name: entry.to_dict() for name, entry in progress.decision.items()
+                }
+        return [(rule, results[rule.name]) for rule in rules], []
 
     def finish(item):
         rule, progress = item

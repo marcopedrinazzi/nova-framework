@@ -158,6 +158,10 @@ else:
 
 ### Method 2: Decorator Pattern (Recommended)
 
+`protect` scans the named argument, including its default value, against the rules
+loaded at call time. Set `param_name` when the argument is not named `prompt`. A
+missing or non-string scan argument raises `NovaEvaluationError` before execution.
+
 ```python
 from nova.sdk import Nova, NovaBlockedError
 

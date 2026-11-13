@@ -354,9 +354,19 @@ class Nova:
             from nova.core.decision import NovaEvaluationError
             rules_with_llm = {rule.name for rule in self._rules if rule.llms or rule.decision}
             early_block, skipped_llm_count = False, 0
+
+            def stop_on_match(rule):
+                nonlocal early_block, skipped_llm_count
+                if self._policy.get_action_for_match(rule.name, rule.meta).action == Action.BLOCK:
+                    early_block = True
+                    skipped_llm_count = len(rules_with_llm)
+                    return True
+                return False
+
             try:
                 results, causes = collect(self._rules, self._matchers, text, scan_text, context=decision_state,
-                                          skip_llm=skip_llm, skip_decision=skip_decision, parallel=parallel)
+                                          skip_llm=skip_llm, skip_decision=skip_decision, parallel=parallel,
+                                          stop_on_match=stop_on_match)
             except NovaEvaluationError as error:
                 partial = ScanResult(text, text, evaluation_complete=False)
                 raise NovaEvaluationError(partial, error.causes) from None
@@ -612,7 +622,7 @@ class Nova:
         Args:
             action: Action to take on match (can override policy)
             severity: Minimum severity to trigger action
-            param_name: Name of the parameter to scan
+            param_name: Name of the parameter to scan, including its default value
             on_block: Custom handler when blocked
             raise_on_block: Whether to raise NovaBlockedError
             skip_llm: Skip LLM evaluations for faster scanning (default False)
@@ -634,79 +644,9 @@ class Nova:
             action = Action(action)
 
         def decorator(func: Callable) -> Callable:
-            if any(rule.decision for rule in self._rules) or decision_state_factory is not None:
-                from nova.sdk.decision_protection import protect_decision
-                return protect_decision(self, func, action, severity, param_name, on_block, raise_on_block,
-                                   skip_llm, skip_decision, decision_state_factory)
-            @functools.wraps(func)
-            def sync_wrapper(*args, **kwargs):
-                # Extract text to scan
-                text = kwargs.get(param_name)
-                if text is None and args:
-                    text = args[0]
-
-                if text is None:
-                    return func(*args, **kwargs)
-
-                # Scan the text
-                result = self.scan(text, skip_llm=skip_llm)
-
-                # Check if we should block
-                should_block = self._should_block(result, action, severity)
-
-                if should_block:
-                    if on_block:
-                        return on_block(result)
-                    if raise_on_block:
-                        raise NovaBlockedError(result)
-                    return None
-
-                # Use sanitized text if redaction occurred
-                if result.redacted:
-                    if param_name in kwargs:
-                        kwargs[param_name] = result.sanitized_text
-                    elif args:
-                        args = (result.sanitized_text,) + args[1:]
-
-                return func(*args, **kwargs)
-
-            @functools.wraps(func)
-            async def async_wrapper(*args, **kwargs):
-                # Extract text to scan
-                text = kwargs.get(param_name)
-                if text is None and args:
-                    text = args[0]
-
-                if text is None:
-                    return await func(*args, **kwargs)
-
-                # Scan the text (run sync scan in executor with skip_llm)
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, lambda: self.scan(text, skip_llm=skip_llm))
-
-                # Check if we should block
-                should_block = self._should_block(result, action, severity)
-
-                if should_block:
-                    if on_block:
-                        return on_block(result)
-                    if raise_on_block:
-                        raise NovaBlockedError(result)
-                    return None
-
-                # Use sanitized text
-                if result.redacted:
-                    if param_name in kwargs:
-                        kwargs[param_name] = result.sanitized_text
-                    elif args:
-                        args = (result.sanitized_text,) + args[1:]
-
-                return await func(*args, **kwargs)
-
-            # Return appropriate wrapper based on function type
-            if asyncio.iscoroutinefunction(func):
-                return async_wrapper
-            return sync_wrapper
+            from nova.sdk.decision_protection import protect_decision
+            return protect_decision(self, func, action, severity, param_name, on_block, raise_on_block,
+                                    skip_llm, skip_decision, decision_state_factory)
 
         return decorator
 

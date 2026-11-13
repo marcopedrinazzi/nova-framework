@@ -1,4 +1,4 @@
-"""Evaluate identical labelled cases locally, optionally also sending them to OpenRouter."""
+"""Compare identical labelled cases across Ollama and/or OpenRouter models."""
 
 import argparse
 import json
@@ -8,6 +8,7 @@ import time
 
 from nova.core.decision import NovaEvaluationError
 from nova.sdk import Nova
+from nova.utils.config import get_config
 from evaluate_quality import CASES
 
 
@@ -15,15 +16,15 @@ def assess(detector, cases):
     metrics = {"cases": 0, "false_positives": 0, "misses": 0, "indeterminate": 0,
                "errors": 0, "http_requests": 0, "reported_api_cost": None}
     rows, durations = [], []
-    for name, goal, action, expected in cases:
+    for name, goal, action_to_check, expected in cases:
         started = time.perf_counter()
         reasons, result, matched = [], None, None
         if not goal:
             reasons = ["missing_approved_task"]
         else:
             try:
-                result = detector.scan(action, decision_state={"approved_task": goal,
-                                       "current_action": action, "previous_steps": []})
+                result = detector.scan(action_to_check, decision_state={"approved_task": goal,
+                                       "current_action": action_to_check, "previous_steps": []})
                 matched = bool(result.matches)
             except NovaEvaluationError as error:
                 result, reasons = error.result, error.causes
@@ -53,19 +54,29 @@ def assess(detector, cases):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ollama-model", required=True, help="Decision model already available in Ollama")
+    parser.add_argument("--ollama-model", nargs="+", action="extend", default=[],
+                        help="One or more Decision models already available in Ollama; repeatable")
     parser.add_argument("--ollama-host", default="", help="Ollama URL; otherwise uses OLLAMA_HOST or localhost:11434")
-    parser.add_argument("--openrouter", action="store_true", help="Also send these synthetic cases to OpenRouter")
-    parser.add_argument("--openrouter-model", default="typesafe/jev-1.14")
+    parser.add_argument("--openrouter", action="store_true", help="Use OpenRouter (defaults to typesafe/jev-1.14)")
+    parser.add_argument("--openrouter-model", nargs="+", action="extend", default=[],
+                        help="One or more OpenRouter Decision model IDs; enables OpenRouter; repeatable")
+    parser.add_argument("--config", help="Path to Nova configuration file (including API keys)")
     parser.add_argument("--limit", type=int, default=3, choices=range(1, len(CASES) + 1))
     args = parser.parse_args()
-    configs = [{"enabled": True, "provider": "ollama", "model": args.ollama_model, "host": args.ollama_host}]
-    if args.openrouter:
-        configs.append({"enabled": True, "provider": "openrouter", "model": args.openrouter_model})
+    if args.openrouter and not args.openrouter_model:
+        args.openrouter_model = ["typesafe/jev-1.14"]
+    if not args.ollama_model and not args.openrouter_model:
+        parser.error("Specify --ollama-model, --openrouter-model or --openrouter")
+    if args.config:
+        get_config(args.config)
+    configs = [{"enabled": True, "provider": "ollama", "model": model, "host": args.ollama_host}
+               for model in dict.fromkeys(args.ollama_model)]
+    configs.extend({"enabled": True, "provider": "openrouter", "model": model}
+                   for model in dict.fromkeys(args.openrouter_model))
     output = {"note": "Small illustrative dataset; results do not establish general detection quality.", "providers": {}}
     for config in configs:
         nova = Nova(rules_path=Path(__file__).with_name("agent_action_risk.nov"), decision_config=config)
-        output["providers"][config["provider"]] = assess(nova, CASES[:args.limit])
+        output["providers"].setdefault(config["provider"], {})[config["model"]] = assess(nova, CASES[:args.limit])
     print(json.dumps(output, indent=2, ensure_ascii=False))
 
 
