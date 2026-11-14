@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Security
+- Raised `sentence-transformers` to `~=5.6.0` to exclude versions affected by PYSEC-2026-4164 (CVE-2026-68770).
+
 ### Added
 - Decision model questions (`noul`, `choice`, and `score`) under `llm:` through OpenRouter Decisions or Ollama, alongside fully supported quoted LLM checks.
 - Explicit typed-model activation, provider/model configuration, and caller-supplied context through the CLI and SDK.
