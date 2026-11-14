@@ -35,9 +35,6 @@ SDIST_REQUIRED_FILES = {
     "scripts/verify_artifacts.py",
     "docs/decision.md",
     "docs/design/decision-section.md",
-    "examples/decision/demo.py",
-    "examples/decision/evaluate_quality.py",
-    "examples/decision/agent_action_risk.nov",
     "tests/test_decision_parser.py",
     "tests/test_decision_integration.py",
     "tests/test_ollama_decision.py",
@@ -59,7 +56,6 @@ SDIST_REQUIRED_FILES = {
     "nova/evaluators/decision/factory.py",
     "nova/evaluators/decision/http.py",
     "nova/evaluators/decision/ollama.py",
-    "examples/decision/compare_providers.py",
     "nova/sdk/decision_protection.py",
 }
 

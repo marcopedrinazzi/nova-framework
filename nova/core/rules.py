@@ -47,10 +47,10 @@ class LLMPattern:
     
     Attributes:
         pattern: The prompt template for LLM evaluation
-        threshold: The minimum confidence score to consider a match (0.0 to 1.0)
+        threshold: Model temperature (0.0 to 1.0); the field name is retained for compatibility
     """
     pattern: str
-    threshold: float = 0.1  # Default confidence threshold
+    threshold: float = 0.1  # Default model temperature
 
 
 @dataclass
