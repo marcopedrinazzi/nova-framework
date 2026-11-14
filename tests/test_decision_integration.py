@@ -30,16 +30,16 @@ class FixtureEvaluator:
         return DecisionBatch({key: project(pattern, validate_answer(pattern, answers[key])) for key, pattern in patterns.items()}, {"model": "fixture"})
 
 
-def rule(condition="all of decision", extra="", name="Risk"):
+def rule(condition="all of llm", extra="", name="Risk"):
     return NovaParser().parse(source(condition, extra=extra, name=name))
 
 
 @pytest.mark.parametrize("condition,text,expected,calls", [
-    ("keywords.$key or decision.$scope", "secret", True, 0),
-    ("keywords.$key and decision.$scope", "ordinary", False, 0),
-    ("keywords.$key or decision.$scope", "ordinary", True, 1),
-    ("decision.$scope", "ordinary", True, 1),
-    ("all of decision", "ordinary", True, 1),
+    ("keywords.$key or llm.$scope", "secret", True, 0),
+    ("keywords.$key and llm.$scope", "ordinary", False, 0),
+    ("keywords.$key or llm.$scope", "ordinary", True, 1),
+    ("llm.$scope", "ordinary", True, 1),
+    ("all of llm", "ordinary", True, 1),
 ])
 def test_short_circuit_across_core_scanner_sdk(condition, text, expected, calls):
     r = rule(condition, extra='keywords:\n$key = "secret"\n')
@@ -59,12 +59,12 @@ def test_short_circuit_across_core_scanner_sdk(condition, text, expected, calls)
             assert "Risk" in result.decision_results
         assert matched is expected
         assert len(evaluator.calls) == calls
-        if condition == "all of decision":
+        if condition == "all of llm":
             assert len(evaluator.calls[0][0]) == 3
 
 
 def test_unknown_never_becomes_negative_or_allowed():
-    nova = Nova(rules=[rule("not decision.$operation")], decision_config={"enabled": True}, decision_evaluator=FixtureEvaluator(.4))
+    nova = Nova(rules=[rule("not llm.$operation")], decision_config={"enabled": True}, decision_evaluator=FixtureEvaluator(.4))
     with pytest.raises(NovaEvaluationError) as caught:
         nova.scan("synthetic")
     result = caught.value.partial_result
@@ -90,7 +90,7 @@ def test_keyword_block_skips_models_but_flag_does_not(action, parallel):
     keyword = NovaParser().parse('rule Keyword {\nkeywords:\n$x = "secret"\ncondition:\n$x\n}')
     legacy_llm = NovaParser().parse('rule LegacyLlm {\nllm:\n$x = "Unsafe?"(0.1)\ncondition:\nllm.$x\n}')
     evaluator = FixtureEvaluator(noul=.1)
-    nova = Nova(rules=[rule("decision.$scope"), legacy_llm, keyword],
+    nova = Nova(rules=[rule("llm.$scope"), legacy_llm, keyword],
                 default_action=action, decision_config={"enabled": True}, decision_evaluator=evaluator)
     llm = Mock()
     llm.evaluate_prompt.return_value = (False, .9, {})
@@ -104,7 +104,7 @@ def test_keyword_block_skips_models_but_flag_does_not(action, parallel):
 
 
 def test_llm_remains_independent_and_uses_temperature():
-    r = rule("decision.$scope and llm.$intent", extra='llm:\n$intent = "Suspicious?"(0.3)\n')
+    r = rule("llm.$scope and llm.$intent", extra='llm:\n$intent = "Suspicious?"(0.3)\n')
     evaluator = FixtureEvaluator()
     llm = Mock()
     llm.evaluate_prompt.return_value = (True, .9, {})
@@ -113,13 +113,13 @@ def test_llm_remains_independent_and_uses_temperature():
     assert llm.evaluate_prompt.call_args.kwargs == {"temperature": .3}
     with pytest.raises(NovaEvaluationError):
         matcher.check_prompt("synthetic", skip_llm=True)
-    assert len(evaluator.calls) == 2
+    assert len(evaluator.calls) == 1
 
 
 def test_sdk_batches_once_and_keeps_nonmatching_evidence():
     evaluator = FixtureEvaluator(noul=.1)
-    nova = Nova(rules=[rule("decision.$scope")], decision_config={"enabled": True}, decision_evaluator=evaluator)
-    result = nova.scan("action", skip_llm=True, decision_state={"goal": "test"})
+    nova = Nova(rules=[rule("llm.$scope")], decision_config={"enabled": True}, decision_evaluator=evaluator)
+    result = nova.scan("action", decision_state={"goal": "test"})
     assert result.clean
     assert result.decision_results["Risk"]["$scope"]["answer"]["noul"] == .1
     assert len(evaluator.calls) == 1
@@ -173,7 +173,7 @@ def test_protection_never_executes_after_unresolved_evaluation(async_mode):
 
 def test_bound_method_and_standalone_sync_async():
     evaluator = FixtureEvaluator(noul=.1)
-    nova = Nova(rules=[rule("decision.$scope")], decision_config={"enabled": True}, decision_evaluator=evaluator)
+    nova = Nova(rules=[rule("llm.$scope")], decision_config={"enabled": True}, decision_evaluator=evaluator)
 
     class Tool:
         @protect(nova_instance=nova, decision_state_factory=lambda args: {"goal": args["goal"]})
@@ -222,7 +222,7 @@ def test_sdk_mixed_file_uses_structural_boundaries(tmp_path):
 
 
 def test_indeterminate_check_can_be_irrelevant_after_llm_answer():
-    r = rule("decision.$operation or llm.$intent", extra='llm:\n$intent = "Intent?"(0.2)\n')
+    r = rule("llm.$operation or llm.$intent", extra='llm:\n$intent = "Intent?"(0.2)\n')
     llm = Mock()
     llm.evaluate_prompt.return_value = (True, .9, {})
     matcher = NovaMatcher(r, llm_evaluator=llm, decision_config={"enabled": True}, decision_evaluator=FixtureEvaluator(.3))
@@ -232,7 +232,7 @@ def test_indeterminate_check_can_be_irrelevant_after_llm_answer():
 
 
 def test_state_does_not_leak_into_keyword_input():
-    r = rule("keywords.$key and decision.$scope", extra='keywords:\n$key = "credential"\n')
+    r = rule("keywords.$key and llm.$scope", extra='keywords:\n$key = "credential"\n')
     evaluator = FixtureEvaluator()
     nova = Nova(rules=[r], decision_config={"enabled": True}, decision_evaluator=evaluator)
     assert nova.scan("read README", decision_state={"history": "credential"}).clean
@@ -240,7 +240,7 @@ def test_state_does_not_leak_into_keyword_input():
 
 
 def test_irrelevant_invalid_context_agrees_across_entry_points():
-    r = rule("keywords.$key or decision.$scope", extra='keywords:\n$key = "secret"\n')
+    r = rule("keywords.$key or llm.$scope", extra='keywords:\n$key = "secret"\n')
     context = {"invalid": object()}
     assert NovaMatcher(r).check_prompt("secret", decision_state=context)["matched"]
     assert NovaScanner([r]).scan_with_details("secret", decision_state=context)["matched_any"]
@@ -258,7 +258,7 @@ def test_protection_scans_default_prompt_with_current_rules(kind, add_after_deco
     llm = Mock()
     llm.evaluate_prompt.return_value = (True, .9, {})
     monkeypatch.setattr(nova, "_create_configured_llm_evaluator", lambda: llm)
-    detection = rule("decision.$scope") if kind == "decision" else NovaParser().parse(
+    detection = rule("llm.$scope") if kind == "decision" else NovaParser().parse(
         'rule Llm {\nllm:\n$x = "Unsafe?"(0.1)\ncondition:\nllm.$x\n}')
     if not add_after_decoration:
         nova.add_rule(detection)
@@ -296,7 +296,7 @@ def test_protection_keeps_skip_decision_after_dynamic_rule_addition(async_mode):
         calls.append(prompt)
 
     protected = nova.protect(skip_decision=True)(run_async if async_mode else run)
-    nova.add_rule(rule("decision.$scope"))
+    nova.add_rule(rule("llm.$scope"))
     with pytest.raises(NovaEvaluationError):
         if async_mode:
             asyncio.run(protected("synthetic"))

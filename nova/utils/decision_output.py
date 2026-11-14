@@ -78,7 +78,7 @@ def format_decision_output(details, index, elapsed_ms, config, verbose=False, ca
                     detail("Usage", ", ".join(f"{key}={value}" for key, value in batch["usage"].items()))
         # Decision reasons are already shown with their variables; retain other stage warnings.
         for warning in debug.get("evaluation_warnings", []):
-            if not warning.startswith("decision."):
+            if not any(warning.startswith(f"llm.{name}:") for name in entries):
                 detail("Warning", warning)
     if not results and causes:
         lines.append("  Reason: " + ", ".join(sorted(set(causes))))

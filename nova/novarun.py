@@ -659,10 +659,15 @@ def main():
         print(f"{Fore.RED}Error parsing rule file: {e}")
         sys.exit(1)
     from nova.core.structure import sections
-    if any("decision" in sections(block)[1] for block in rule_blocks):
+    from nova.core.decision_parser import has_typed_llm
+    typed_llm = any(
+        has_typed_llm(sections(block)[1].get("llm", ("", 0))[0])
+        for block in rule_blocks
+    )
+    if typed_llm:
         return run_decision_cli(args, parser, rule_blocks, prompts)
     if args.json:
-        parser.error("--json currently requires a rule file with a decision section")
+        parser.error("--json currently requires a rule file with typed llm declarations")
     if not args.single and len(rule_blocks) > 1:
         # Extract all rules from the file
         if not rule_blocks:

@@ -100,7 +100,7 @@ class NovaScanner:
         """Check if a rule requires LLM evaluation."""
         if rule.llms:
             return True
-        if rule.condition and 'llm.' in rule.condition.lower():
+        if not rule.decision and rule.condition and 'llm.' in rule.condition.lower():
             return True
         return False
     

@@ -355,7 +355,8 @@ Python SDK or local ML dependency is needed. See the
 
 Pass `decision_config={"enabled": True}` to `Nova` to enable OpenRouter Decisions, and
 pass explicit context with `scan(text, decision_state=context)`. `scan_async` supports
-the same options. `skip_llm=True` does not disable Decision.
+the same options. `skip_llm=True` skips all LLM checks, including typed questions;
+`skip_decision=True` skips only typed questions.
 
 Inspect `result.decision_results` for all typed answers and `result.decision_batches` for
 request metadata. Catch `NovaEvaluationError` for unresolved required checks;

@@ -63,21 +63,21 @@ class NovaParser:
             NovaParserError: If the rule definition doesn't follow the grammar
         """
         from nova.core.structure import sections
-        from nova.core.decision_parser import parse_decision
+        from nova.core.decision_parser import parse_llm, has_typed_llm
         from nova.evaluators.decision.condition import compile_condition
 
         try:
             rule_name, bodies = sections(content)
             self.rule = NovaRule(name=rule_name)
-            self.variable_names = {name: set() for name in ("keywords", "semantics", "llm", "decision")}
+            self.variable_names = {name: set() for name in ("keywords", "semantics", "llm")}
             for name, (body, offset) in bodies.items():
-                if name in ("jev", "sys1"):
-                    raise ValueError(f"The '{name}:' section was renamed to 'decision:'. Update its condition references too.")
+                if name in ("decision", "detection", "jev", "sys1"):
+                    raise ValueError(f"The '{name}:' section was removed; place its declarations under 'llm:'. Update its condition references too.")
                 if name == "condition":
                     continue
-                if name == "decision":
-                    self.rule.decision = parse_decision(body, rule_name, offset)
-                    self.variable_names["decision"] = set(self.rule.decision)
+                if name == "llm" and has_typed_llm(body):
+                    self.rule.llms, self.rule.decision = parse_llm(body, rule_name, offset, self._parse_llm_section)
+                    self.variable_names["llm"] = set(self.rule.llms) | set(self.rule.decision)
                 else:
                     self._parse_section(name, body.splitlines())
             if "condition" not in bodies:
@@ -140,7 +140,7 @@ class NovaParser:
         elif section == "condition":
             self.rule.condition = self._parse_condition_section(content)
         else:
-            expected = "meta, keywords, semantics, llm, decision, condition"
+            expected = "meta, keywords, semantics, llm, condition"
             raise NovaParserError(
                 f"Unknown section '{section}' in rule '{self.rule.name}'. Expected one of: {expected}"
             )

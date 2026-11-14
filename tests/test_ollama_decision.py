@@ -90,7 +90,7 @@ def test_missing_answer_keeps_valid_sibling_and_low_confidence():
 ])
 def test_failed_required_check_never_allows_negation(failure, reason):
     ev, session = evaluator([failure])
-    nova = Nova(rules=[rule("not decision.$scope")], decision_config=ev.config, decision_evaluator=ev)
+    nova = Nova(rules=[rule("not llm.$scope")], decision_config=ev.config, decision_evaluator=ev)
     with pytest.raises(NovaEvaluationError) as caught:
         nova.scan("synthetic")
     assert not caught.value.result.allowed and not caught.value.result.clean
@@ -163,7 +163,7 @@ def test_no_local_runtime_extra_or_setup_command():
 @pytest.mark.parametrize("async_mode", [False, True])
 def test_protection_stops_on_unavailable_ollama(async_mode):
     ev, _ = evaluator([requests.ConnectionError("offline")])
-    nova = Nova(rules=[rule("not decision.$scope")], decision_config=ev.config, decision_evaluator=ev)
+    nova = Nova(rules=[rule("not llm.$scope")], decision_config=ev.config, decision_evaluator=ev)
     executed = []
     if async_mode:
         @nova.protect(raise_on_block=False)

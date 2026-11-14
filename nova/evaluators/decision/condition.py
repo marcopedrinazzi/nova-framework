@@ -36,11 +36,11 @@ class Node:
 
 
 def declarations(rule):
-    return {"keywords": rule.keywords, "semantics": rule.semantics, "llm": rule.llms, "decision": rule.decision}
+    return {"keywords": rule.keywords, "semantics": rule.semantics, "llm": {**rule.llms, **rule.decision}}
 
 
 class Compiler:
-    token = re.compile(r"(?:keywords|semantics|llm|decision)\.(?:\$[A-Za-z0-9_]+\*?|\*)|\$[A-Za-z0-9_]+\*?|[A-Za-z_][A-Za-z0-9_]*|\d+|[()]")
+    token = re.compile(r"(?:keywords|semantics|llm)\.(?:\$[A-Za-z0-9_]+\*?|\*)|\$[A-Za-z0-9_]+\*?|[A-Za-z_][A-Za-z0-9_]*|\d+|[()]")
 
     def __init__(self, condition, sections):
         self.tokens = []

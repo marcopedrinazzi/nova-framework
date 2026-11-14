@@ -14,7 +14,7 @@ from test_decision_integration import FixtureEvaluator
 
 def invoke(monkeypatch, tmp_path, args=(), rule_text=None):
     path = tmp_path / "rule.nov"
-    path.write_text(rule_text or source("decision.$scope"))
+    path.write_text(rule_text or source("llm.$scope"))
     monkeypatch.setattr(sys, "argv", ["novarun", "--rule", str(path), *args])
     return novarun.main()
 
@@ -100,10 +100,10 @@ def test_verbose_evidence_and_incomplete_diagnostics(monkeypatch, tmp_path, caps
         args.append("--verbose")
     if confidence < .6:
         with pytest.raises(SystemExit) as caught:
-            invoke(monkeypatch, tmp_path, args, source("decision.$operation"))
+            invoke(monkeypatch, tmp_path, args, source("llm.$operation"))
         assert caught.value.code == 1
     else:
-        invoke(monkeypatch, tmp_path, args, source("decision.$operation"))
+        invoke(monkeypatch, tmp_path, args, source("llm.$operation"))
     raw = capsys.readouterr().out
     assert all(marker not in raw for marker in ("private-api-key-marker", "private-context-marker", "private-prompt-marker"))
     output = json.loads(raw[raw.index("{"):])
@@ -113,7 +113,7 @@ def test_verbose_evidence_and_incomplete_diagnostics(monkeypatch, tmp_path, caps
     rule = output["rule_details"]["Risk"]
     assert output["elapsed_ms"] >= 0
     assert output["decision_config"]["provider"] == "openrouter"
-    assert rule["condition"] == "decision.$operation"
+    assert rule["condition"] == "llm.$operation"
     assert rule["decision_batches"][0]["usage"]["cost"] == .001
     assert rule["decision_batches"][0]["id"] == "fixture-request"
     assert rule["condition_result"] == ("unknown" if confidence < .6 else "true")
@@ -126,7 +126,7 @@ def test_verbose_evidence_and_incomplete_diagnostics(monkeypatch, tmp_path, caps
 def test_readable_output_shows_all_native_results(monkeypatch, tmp_path, capsys, verbose, confidence):
     fixture = FixtureEvaluator(confidence=confidence, noul=.1)
     monkeypatch.setattr(OpenRouterDecisionEvaluator, "evaluate_many", lambda self, patterns, state: fixture.evaluate_many(patterns, state))
-    rules = "\n".join(source(f"decision.${variable}", name=name) for variable, name in
+    rules = "\n".join(source(f"llm.${variable}", name=name) for variable, name in
                        [("scope", "Override"), ("risk", "Impact"), ("operation", "Operation")])
     args = ["--decision", "--prompt", "private-prompt-marker"] + (["--verbose"] if verbose else [])
     if confidence < .6:

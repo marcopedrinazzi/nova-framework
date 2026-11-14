@@ -3,16 +3,15 @@
 ## [Unreleased]
 
 ### Added
-- Ollama decision models through `/v1/systemone`, with configurable host and model, shared bounded HTTP transport, typed results and incomplete-evaluation errors.
-- Optional `decision:` declarations for Noul, Choice and Score through OpenRouter Decisions.
-- Three-state predicates, mixed batches, explicit context, rich diagnostics and strict incomplete-evaluation errors across core, SDK, decorators and CLI.
-- `--decision`, `--skip-decision`, `--decision-model` and `--decision-state` CLI options; separate Decision configuration and explicit activation.
-- Offline regression tests, opt-in synthetic live smoke test, typed examples and a labelled evaluation harness.
+- Decision model questions (`noul`, `choice`, and `score`) under `llm:` through OpenRouter Decisions or Ollama, alongside fully supported quoted LLM checks.
+- Explicit typed-model activation, provider/model configuration, and caller-supplied context through the CLI and SDK.
+- Native typed answers and diagnostics, including probabilities and confidence when supplied. Required unresolved checks raise `NovaEvaluationError` instead of becoming nonmatches.
 
 ### Changed
-- Replaced the unreleased direct Laya runtime with Ollama; removed the `[laya]` extra, model preparation command and device settings. Ollama manages local models.
-- Renamed the unreleased `sys1:` section (previously `jev:`) to provider-independent `decision:`, including CLI flags, SDK arguments, configuration, diagnostics and module paths. See `docs/decision.md` for migration; the default OpenRouter model is `typesafe/jev-1.14`.
-- Rule boundaries now use a shared lexical reader for nested blocks, quoted strings, regex literals and comments. Legacy rule behavior and LLM temperature semantics remain unchanged.
+- Rule parsing supports nested typed declarations while preserving existing quoted LLM syntax and temperature semantics.
+
+### Fixed
+- `@nova.protect()` scans default argument values and bound-method arguments, applies rules added after decoration, and respects `skip_decision`.
 
 ## [0.3.1] - 2026-09-21
 

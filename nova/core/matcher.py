@@ -105,7 +105,7 @@ class NovaMatcher:
         needs_llm = False
         if rule and rule.llms:
             needs_llm = True
-        elif rule and 'llm.' in rule.condition.lower():
+        elif rule and not rule.decision and 'llm.' in rule.condition.lower():
             needs_llm = True
         
         # Only initialize semantic evaluator if needed

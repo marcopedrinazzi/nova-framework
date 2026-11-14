@@ -9,9 +9,11 @@ from nova.core.decision import NoulPattern, ChoicePattern, ScorePattern
 
 class Reader:
     def __init__(self, source, rule, offset):
+        self.source = source
+        self.quoted = {}
         self.tokens = tokenize(source)
         self.index = 0
-        self.rule, self.offset, self.variable = rule, offset, "decision"
+        self.rule, self.offset, self.variable = rule, offset, "llm"
 
     def fail(self, message):
         token = self.tokens[min(self.index, len(self.tokens) - 1)] if self.tokens else None
@@ -78,7 +80,7 @@ class Reader:
         except ValueError:
             self.fail("Expected number, string, list or options block")
 
-    def read(self):
+    def read(self, parse_quoted=None):
         patterns = {}
         self.newlines()
         contracts = {
@@ -87,14 +89,22 @@ class Reader:
             "score": ({"levels", "threshold"}, {"min_confidence"}),
         }
         while self.peek() is not None:
+            start = self.tokens[self.index].start
             name = self.take()
             self.variable = name
-            if not re.fullmatch(r"\$[A-Za-z0-9_]+", name) or name in patterns:
+            if not re.fullmatch(r"\$[A-Za-z0-9_]+", name) or name in patterns or name in self.quoted:
                 self.fail("Invalid or duplicate variable")
             self.take("=")
+            if parse_quoted is not None and (self.peek() or "").startswith('"'):
+                while self.peek() not in (None, "\n"):
+                    self.take()
+                end = self.tokens[self.index].start if self.peek() is not None else len(self.source)
+                self.quoted.update(parse_quoted([self.source[start:end]]))
+                self.newlines()
+                continue
             kind = self.take()
             if kind not in contracts:
-                self.fail(f"Unknown Decision primitive '{kind}'")
+                self.fail(f"Unknown decision model question type '{kind}'")
             question = self.string()
             self.take("{")
             self.newlines()
@@ -125,10 +135,23 @@ class Reader:
             if self.peek() not in (None, "\n"):
                 self.fail("Expected newline after declaration")
             self.newlines()
-        if not patterns:
-            self.fail("Empty Decision section")
+        if not patterns and not self.quoted:
+            self.fail("Empty llm section")
         return patterns
 
 
 def parse_decision(source, rule, offset=0):
     return Reader(source, rule, offset).read()
+
+
+def parse_llm(source, rule, offset, parse_quoted):
+    reader = Reader(source, rule, offset)
+    typed = reader.read(parse_quoted)
+    return reader.quoted, typed
+
+
+def has_typed_llm(source):
+    tokens = tokenize(source)
+    return any(tokens[i].text.startswith("$") and tokens[i + 1].text == "="
+               and tokens[i + 2].text in ("noul", "choice", "score")
+               for i in range(len(tokens) - 2))

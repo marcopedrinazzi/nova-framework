@@ -24,21 +24,23 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
     rule = matcher.rule
     node = compile_condition(rule)
     progress = progress or Progress(decision={name: record(pattern) for name, pattern in rule.decision.items()})
-    groups = declarations(rule)
+    groups = {"keywords": rule.keywords, "semantics": rule.semantics,
+              "decision": rule.decision, "llm": rule.llms}
     for section in ("keywords", "semantics", "decision", "llm"):
         if fast and section in ("decision", "llm"):
             break
+        namespace = "llm" if section == "decision" else section
         needed = node.needed(progress.values)
         patterns = {name: pattern for name, pattern in groups[section].items()
-                    if f"{section}.{name}" in needed and f"{section}.{name}" not in progress.errors
-                    and f"{section}.{name}" not in progress.values}
+                    if f"{namespace}.{name}" in needed and f"{namespace}.{name}" not in progress.errors
+                    and f"{namespace}.{name}" not in progress.values}
         if not patterns:
             continue
         if section == "decision":
-            if skip_decision or not matcher.decision_config.enabled:
+            if skip_llm or skip_decision or not matcher.decision_config.enabled:
                 for name in patterns:
                     progress.decision[name].status = "unavailable"
-                    progress.decision[name].reason = "skipped" if skip_decision else "disabled"
+                    progress.decision[name].reason = "skipped" if skip_llm or skip_decision else "disabled"
             else:
                 try:
                     batch = matcher.decision_evaluator.evaluate_many(patterns, state)
@@ -54,12 +56,12 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
                         progress.decision[name].status, progress.decision[name].reason = "error", "evaluator_error"
             for name in patterns:
                 entry = progress.decision[name]
-                progress.values[f"decision.{name}"] = entry.predicate
+                progress.values[f"llm.{name}"] = entry.predicate
                 if entry.predicate is Predicate.UNKNOWN:
-                    progress.errors[f"decision.{name}"] = entry.reason or "unavailable"
+                    progress.errors[f"llm.{name}"] = entry.reason or "unavailable"
             continue
         for name, pattern in patterns.items():
-            ref = f"{section}.{name}"
+            ref = f"{namespace}.{name}"
             if ref not in node.needed(progress.values):
                 continue
             try:
@@ -90,11 +92,12 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
             if entry.status == "pending":
                 entry.status, entry.reason = "skipped", "condition_determined" if outcome is not Predicate.UNKNOWN else "unreferenced"
     matches = {section: {name: True for name in patterns if progress.values.get(f"{section}.{name}") is Predicate.TRUE}
-               for section, patterns in groups.items()}
+               for section, patterns in declarations(rule).items()}
     result = {
         "matched": outcome is Predicate.TRUE, "rule_name": rule.name, "meta": rule.meta,
         "matching_keywords": matches["keywords"], "matching_semantics": matches["semantics"],
-        "matching_llm": matches["llm"], "matching_decision": matches["decision"],
+        "matching_llm": matches["llm"],
+        "matching_decision": {name: True for name in rule.decision if progress.values.get(f"llm.{name}") is Predicate.TRUE},
         "semantic_scores": progress.semantic_scores, "llm_scores": progress.llm_scores,
         "decision_results": {name: entry.to_dict() for name, entry in progress.decision.items()},
         "decision_batches": progress.batches, "evaluation_complete": outcome is not Predicate.UNKNOWN,
@@ -152,8 +155,8 @@ def collect(rules, matchers, original_text, text, *, context=None, skip_llm=Fals
             return rule.name, matchers[rule.name].check_prompt(text), []
         if invalid_state:
             for name in rule.decision:
-                progress.values[f"decision.{name}"] = Predicate.UNKNOWN
-                progress.errors[f"decision.{name}"] = "invalid_state"
+                progress.values[f"llm.{name}"] = Predicate.UNKNOWN
+                progress.errors[f"llm.{name}"] = "invalid_state"
                 progress.decision[name].status, progress.decision[name].reason = "error", "invalid_state"
         try:
             result, _ = evaluate(matchers[rule.name], text, state, skip_llm=skip_llm,

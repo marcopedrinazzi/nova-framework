@@ -1,43 +1,60 @@
 # Decision rule, SDK and CLI guide
 
-`decision:` is NOVA's provider-independent typed decision section. The initial provider
-is TypeSafe Jev through OpenRouter; Ollama provides local decision models. NOVA converts its answers to predicates and
-evaluates the rule's `condition:`. The integration is disabled by default. Enabling OpenRouter sends
-the evaluated text and any explicitly supplied context to OpenRouter. Ollama evaluates
-the same state through its System One endpoint. An API key
-alone does not activate it. OpenRouter needs no additional installation extra: the HTTP
-adapter uses NOVA's existing `requests` dependency.
+The `llm:` section supports two forms of model checks:
 
-## Migration from the development `sys1:` name
-
-This unreleased feature now uses `decision` consistently. The previous `sys1` and `jev` names are not aliases.
-
-| Before | Now |
+| Declaration | Evaluated by |
 |---|---|
-| `sys1:` and `sys1.$name` | `decision:` and `decision.$name` |
-| `sys1.*`, `any of sys1`, `all of sys1`, `2 of sys1` | Same forms using `decision` |
-| `--sys1`, `--skip-sys1`, `--sys1-model`, `--sys1-state` | `--decision`, `--skip-decision`, `--decision-model`, `--decision-state` |
-| `Sys1Config`, `sys1_config`, `sys1_evaluator` | `DecisionConfig`, `decision_config`, `decision_evaluator` |
-| `sys1_state`, `sys1_state_factory`, `skip_sys1` | `decision_state`, `decision_state_factory`, `skip_decision` |
-| `matching_sys1`, `sys1_results`, `sys1_batches` | `matching_decision`, `decision_results`, `decision_batches` |
-| `[sys1]`, `NOVA_SYS1_*` | `[decision]`, `NOVA_DECISION_*` |
-| `nova.evaluators.sys1`, `nova.core.sys1` | `nova.evaluators.decision`, `nova.core.decision` |
-| `Sys1Pattern`, `Sys1Answer`, `Sys1Evaluation`, `Sys1Batch`, `Sys1Evaluator` | Corresponding `Decision*` names |
-| `OpenRouterSys1Evaluator` | `OpenRouterDecisionEvaluator` |
-| `examples/sys1/`, `docs/sys1.md` | `examples/decision/`, `docs/decision.md` |
+| `$question = "Question?" (0.1)` | An LLM through the configured LLM provider |
+| `noul`, `choice`, or `score` with question settings | A decision model through the configured Decision provider |
 
-The default model identifier is `typesafe/jev-1.14`, and credentials still use
-`OPENROUTER_API_KEY`. The development branch remains `dev/jev-section`. User-owned
-rule files are not automatically rewritten. Rules without a decision section are unchanged.
+Quoted LLM checks remain fully supported. Decision models include TypeSafe Jev through OpenRouter and compatible
+models served by Ollama. NOVA converts both forms' answers into condition predicates.
+Decision model evaluation is disabled by default; an API key alone does not
+activate it. OpenRouter sends the evaluated text and explicitly supplied context
+to its service, while Ollama sends them to the configured server. The adapters use
+NOVA's existing `requests` dependency.
+
+## LLM declaration forms
+
+The `llm:` section accepts both quoted LLM checks and typed `noul`, `choice`,
+and `score` questions. All use `llm.$name` references and participate in quantifiers
+such as `any of llm` and `all of llm`. Variable names must be unique across both forms.
+Quoted LLM checks retain their syntax, provider configuration and temperature
+semantics. Typed questions retain the Decision provider configuration, enablement,
+context and result fields described below; moving their declarations does not change
+the provider API.
+
+Move declarations from the removed `decision:` section into `llm:` and update
+`decision.$name` references to `llm.$name`. The removed section and its condition
+namespace are rejected; they are not aliases. The older `sys1:` and `jev:` names
+are also rejected. Use the same `llm:` block when combining quoted and typed checks.
 
 Ollama is explicitly opt-in. See the [Ollama provider guide](#ollama-provider).
 
 ## Rule syntax
 
+Quoted LLM checks can appear beside typed declarations:
+
+```nova
+llm:
+    $check = "Does this input actively request a governing-instruction override?" (0.1)
+    $override = noul "Does this input actively request a governing-instruction override?" {
+        true = "An active instruction to override governing instructions"
+        false = "Ordinary work or discussion without an active override"
+        threshold = 0.75
+    }
+condition:
+    llm.$check or llm.$override
+```
+
+The two forms above illustrate syntax, not independent evidence. Choose the
+questions the rule needs rather than duplicating the same judgment by default.
+
+
 ```nova
 rule ActionRisk
 {
-    decision:
+    llm:
         $scope = noul "Is context.current_action outside context.approved_task?" {
             true = "The action exceeds the approved task"
             false = "The action directly serves the approved task"
@@ -56,9 +73,12 @@ rule ActionRisk
             threshold = 1.5
             min_confidence = 0.60
         }
+    
+
     condition:
-        decision.$scope or (decision.$operation and decision.$impact)
+        llm.$scope or (llm.$operation and llm.$impact)
 }
+
 ```
 
 These thresholds are illustrative, not validated defaults. Assignments are
@@ -81,11 +101,12 @@ Settings remain local; the provider receives only each question's `type`,
 `instructions`, and translated `criteria`. Unknown settings, duplicate fields,
 invalid ranges, undefined match options, unclosed blocks, and undeclared condition
 references are rejected without network access. Variables must be unique within
-their section. Cross-section duplicates require qualified condition references.
+their section. Cross-section duplicates require qualified condition references; quoted and typed
+checks share one `llm:` namespace and cannot reuse variable names.
 
-Supported condition forms include `decision.$scope`, `decision.*`, `decision.$prefix*`, `any of decision`,
-`all of decision`, `2 of decision`, `all of ($prefix*)`, and ordinary `and`, `or`, `not`, and
-parentheses. Conditions evaluate predicates; `decision.$impact.score >= 2` is not valid.
+Supported condition forms include `llm.$scope`, `llm.*`, `llm.$prefix*`, `any of llm`,
+`all of llm`, `2 of llm`, `all of ($prefix*)`, and ordinary `and`, `or`, `not`, and
+parentheses. Conditions evaluate predicates; `llm.$impact.score >= 2` is not valid.
 
 ## Uncertainty and failures
 
@@ -154,7 +175,8 @@ review; they cannot prevent an action that already happened.
 
 `scan_async`, `NovaScanner.scan`, `NovaScanner.scan_with_details`,
 `NovaMatcher.check_prompt`, and standalone SDK scan helpers accept keyword-only
-`decision_state` and `skip_decision`. `skip_llm=True` does not disable Decision. Skipping a required
+`decision_state` and `skip_decision`. `skip_llm=True` skips both quoted and typed
+LLM checks; `skip_decision=True` skips only typed checks. Skipping a required
 Decision check is an incomplete evaluation, not permission to proceed.
 
 For protection decorators, `decision_state_factory` receives a dictionary of bound
@@ -180,7 +202,7 @@ Response probabilities must include all declared entries when supplied. Sum and
 Score consistency checks account for two-decimal probability rounding without
 renormalizing. No generated explanation is presented as the model's reasoning.
 
-Legacy-only scans keep their serialized result shape, imports, model behavior and
+Scans without decision model questions keep their serialized result shape, imports, model behavior and
 dependency requirements. There is no package version bump in this branch.
 
 ## CLI and configuration

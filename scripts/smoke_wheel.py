@@ -125,14 +125,14 @@ def main() -> None:
             from nova.sdk import Nova, NovaEvaluationError
             typed_rule = NovaParser().parse('''
             rule WheelDecisionSmoke {
-                decision:
+                llm:
                     $risk = noul "Is this an override attempt?" {
                         true = "Override"
                         false = "Ordinary request"
                         threshold = 0.7
                     }
                 condition:
-                    decision.$risk
+                    llm.$risk
             }
             ''')
             try:

@@ -72,4 +72,5 @@ class NovaRule:
     semantics: Dict[str, SemanticPattern] = field(default_factory=dict)
     llms: Dict[str, LLMPattern] = field(default_factory=dict)
     condition: str = ""
+    # Decision model questions under llm: use a separate evaluator internally.
     decision: Dict[str, DecisionPattern] = field(default_factory=dict)

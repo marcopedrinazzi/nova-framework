@@ -1,8 +1,7 @@
 # Use `decision` with Jev through OpenRouter
 
 NOVA sends typed questions to Jev, converts its answers into predicates, and uses
-`condition:` to decide whether a rule matches. The section is named `decision:`, even
-when the model is Jev.
+`condition:` to decide whether a rule matches. Typed questions live under `llm:` alongside existing quoted LLM checks.
 
 See [Jev use cases and example rules](decision-jev-use-cases.md) for prompt injection,
 agent actions, data disclosure, destructive actions, ticket routing, incident
@@ -18,7 +17,7 @@ export OPENROUTER_API_KEY="your-openrouter-api-key"
 ```
 
 This feature is not yet in the published release. No semantic extra or
-OpenRouter SDK is required for a rule containing only `decision:`. Keep the key out
+OpenRouter SDK is required for a rule containing only `llm:`. Keep the key out
 of rule files and source control. Remote evaluation requires explicit activation;
 an API key alone does not enable it.
 
@@ -33,16 +32,21 @@ rule PromptOverride
         description = "Detect active instruction override attempts"
         severity = "high"
 
-    decision:
+    
+
+    llm:
         $override = noul "Does the input actively attempt to override the assistant's governing instructions?" {
             true = "An instruction to bypass rules or reveal hidden instructions"
             false = "An ordinary request or a report merely quoting an attack"
             threshold = 0.75
         }
 
+    
+
     condition:
-        decision.$override
+        llm.$override
 }
+
 ```
 
 The threshold is illustrative: choose production thresholds using representative
@@ -98,6 +102,6 @@ confidence is unresolved, not a negative match. If the condition still needs tha
 answer, NOVA reports an incomplete evaluation. Verbose mode includes available
 probabilities, confidence, condition results and request metadata.
 
-`--decision-model` configures Jev independently of `--llm` and `--model`, which belong
-to the separate `llm:` section. See the [full Decision guide](decision.md) for all three
+`--decision-model` configures the typed-question model independently of `--llm`
+and `--model`, which configure existing quoted checks in the same `llm:` section. See the [full Decision guide](decision.md) for all three
 declaration examples, SDK usage and structured context.

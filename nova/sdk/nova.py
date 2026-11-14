@@ -25,7 +25,7 @@ from nova.utils.helpers import normalize_unicode
 from .policy import NovaPolicy, Action
 from .result import ScanResult, RuleMatch
 from .redaction import Redactor
-from .exceptions import NovaBlockedError, NovaConfigError
+from .exceptions import NovaConfigError
 
 
 class Nova:
@@ -266,7 +266,7 @@ class Nova:
         """Check if a rule requires LLM evaluation."""
         if rule.llms:
             return True
-        if rule.condition and 'llm.' in rule.condition.lower():
+        if not rule.decision and rule.condition and 'llm.' in rule.condition.lower():
             return True
         return False
 
@@ -516,7 +516,6 @@ class Nova:
                 *[name for name, matched in matching_keywords.items() if matched],
                 *[name for name, matched in matching_semantics.items() if matched],
                 *[name for name, matched in matching_llm.items() if matched],
-                *result.get("matching_decision", {}),
             ]
 
             # Create RuleMatch

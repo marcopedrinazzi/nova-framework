@@ -29,8 +29,9 @@ DECLARATIONS = '''
 '''
 
 
-def source(condition="any of decision", declarations=DECLARATIONS, extra="", name="Risk"):
-    return f"rule {name} {{\n{extra}\ndecision:\n{declarations}\ncondition:\n{condition}\n}}"
+def source(condition="any of llm", declarations=DECLARATIONS, extra="", name="Risk"):
+    other, separator, legacy = extra.partition("llm:\n")
+    return f"rule {name} {{\n{other}\nllm:\n{legacy if separator else ''}\n{declarations}\ncondition:\n{condition}\n}}"
 
 
 def test_mixed_nested_file_and_regex_literals():
@@ -61,21 +62,21 @@ def test_invalid_declarations(old, new):
         NovaParser().parse(source(declarations=DECLARATIONS.replace(old, new)))
 
 
-@pytest.mark.parametrize("condition", ["decision.$missing", "decision.$risk.score >= 2", "not", "decision.$scope decision.$risk", "4 of decision"])
+@pytest.mark.parametrize("condition", ["llm.$missing", "llm.$risk.score >= 2", "not", "llm.$scope llm.$risk", "4 of llm"])
 def test_invalid_conditions(condition):
     with pytest.raises(NovaParserError):
         NovaParser().parse(source(condition))
 
 
 def test_trailing_content_unclosed_and_duplicate_sections():
-    for text in [source() + "junk", source()[:-2], source(extra="decision:\n")]:
+    for text in [source() + "junk", source()[:-2], source().replace("llm:", "llm:\nllm:", 1)]:
         with pytest.raises(NovaParserError):
             NovaParser().parse(text)
 
 
 def test_qualified_duplicate_names_allowed_but_ambiguous_bare_reference_rejected():
     extra = 'keywords:\n$scope = "scope"\n'
-    NovaParser().parse(source("keywords.$scope or decision.$scope", extra=extra))
+    NovaParser().parse(source("keywords.$scope or llm.$scope", extra=extra))
     with pytest.raises(NovaParserError, match="Ambiguous"):
         NovaParser().parse(source("$scope", extra=extra))
 
@@ -108,6 +109,6 @@ def test_no_section_or_wildcard_shorthand(condition):
 
 @pytest.mark.parametrize("old_name", ["jev", "sys1"])
 def test_old_section_reports_migration_instead_of_evaluating_it(old_name):
-    old = source().replace("decision:", f"{old_name}:").replace("of decision", f"of {old_name}")
-    with pytest.raises(NovaParserError, match="renamed to 'decision:'"):
+    old = source().replace("llm:", f"{old_name}:").replace("of decision", f"of {old_name}")
+    with pytest.raises(NovaParserError, match="under 'llm:'"):
         NovaParser().parse(old)

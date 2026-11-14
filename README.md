@@ -179,9 +179,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, validation gates, 
 
 Created and maintained by [fr0gger](https://github.com/fr0gger).
 
-## Optional Decision section
+## Decision model questions in `llm:`
 
-Decision adds typed Noul, Choice and Score questions through OpenRouter or Ollama. NOVA converts
+The `llm:` section supports quoted questions evaluated by LLMs and `noul`,
+`choice`, and `score` questions evaluated by decision models through OpenRouter or Ollama. NOVA converts
 the answers into predicates for `condition:`. It requires explicit activation;
 uncertain or unavailable required answers raise an evaluation error. See the
 [Decision rule, SDK and CLI guide](docs/decision.md) and [runnable examples](examples/decision/demo.py).

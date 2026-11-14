@@ -37,7 +37,7 @@ def test_provider_comparison_retains_negative_and_incomplete_results(monkeypatch
     from compare_providers import assess
     from test_decision_integration import FixtureEvaluator, rule
     from nova.sdk import Nova
-    for confidence, noul, condition, indeterminate in [(.8, .1, "decision.$scope", 1), (.1, .8, "decision.$operation", 2)]:
+    for confidence, noul, condition, indeterminate in [(.8, .1, "llm.$scope", 1), (.1, .8, "llm.$operation", 2)]:
         nova = Nova(rules=[rule(condition)], decision_config={"enabled": True},
                     decision_evaluator=FixtureEvaluator(confidence=confidence, noul=noul))
         report = assess(nova, [("sample", "Read", "Read", False), ("missing", "", "Read", None)])
