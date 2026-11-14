@@ -73,7 +73,7 @@ rule ActionRisk
             threshold = 1.5
             min_confidence = 0.60
         }
-    
+
 
     condition:
         llm.$scope or (llm.$operation and llm.$impact)

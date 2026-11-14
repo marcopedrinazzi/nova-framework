@@ -48,7 +48,7 @@ rule ActivePromptOverride
 {
     keywords:
         $override_phrase = /ignore (all )?(previous|prior) instructions/i
-    
+
 
     llm:
         $active_override = noul "Does the input actively instruct the assistant to bypass its governing instructions, rather than merely quote or discuss an attack?" {
@@ -56,7 +56,7 @@ rule ActivePromptOverride
             false = "An ordinary request or discussion quoting an attack without requesting its execution"
             threshold = 0.75
         }
-    
+
 
     condition:
         keywords.$override_phrase and llm.$active_override
@@ -103,7 +103,7 @@ rule OutOfScopeAgentAction
             threshold = 2.0
             min_confidence = 0.60
         }
-    
+
 
     condition:
         llm.$outside_scope and (llm.$sensitive_operation or llm.$high_impact)
@@ -161,7 +161,7 @@ rule SensitiveDataTransfer
 {
     keywords:
         $secret = /api[_ -]?keys?|passwords?|credentials|id_rsa|\.env/i
-    
+
 
     llm:
         $external_transfer = choice "What does the input ask the assistant to do with sensitive information? Distinguish requested execution from quotation or discussion." {
@@ -183,7 +183,7 @@ rule SensitiveDataTransfer
             threshold = 2.0
             min_confidence = 0.60
         }
-    
+
 
     condition:
         keywords.$secret and llm.$external_transfer and llm.$high_impact
@@ -213,7 +213,7 @@ rule DifficultRecovery
             threshold = 2.0
             min_confidence = 0.60
         }
-    
+
 
     condition:
         llm.$recovery
@@ -244,7 +244,7 @@ rule BillingQueue
             match = ["billing"]
             min_confidence = 0.60
         }
-    
+
 
     condition:
         llm.$queue
@@ -279,7 +279,7 @@ rule HighImpactIncident
             threshold = 2.0
             min_confidence = 0.60
         }
-    
+
 
     condition:
         llm.$impact
@@ -305,7 +305,7 @@ rule RetrievedInstructionAttempt
             false = "Reference information or quoted examples discussed without directing the assistant to execute them"
             threshold = 0.75
         }
-    
+
 
     condition:
         llm.$injection
@@ -338,7 +338,7 @@ rule ContentReview
             match = ["targeted_abuse", "threat"]
             min_confidence = 0.60
         }
-    
+
 
     condition:
         llm.$category

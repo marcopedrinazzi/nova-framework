@@ -32,7 +32,7 @@ rule PromptOverride
         description = "Detect active instruction override attempts"
         severity = "high"
 
-    
+
 
     llm:
         $override = noul "Does the input actively attempt to override the assistant's governing instructions?" {
@@ -41,7 +41,7 @@ rule PromptOverride
             threshold = 0.75
         }
 
-    
+
 
     condition:
         llm.$override
