@@ -135,6 +135,7 @@ class Nova:
         # Initialize evaluators and matchers
         self._initialize_evaluators()
         self._initialize_matchers()
+        self._warn_if_decision_disabled()
 
         # Print initialization debug info
         if self._debug:
@@ -202,9 +203,29 @@ class Nova:
             self._rule_sources[rule.name] = str(source)
 
     def _split_rule_blocks(self, content: str) -> List[str]:
-        """Split content into individual rule blocks."""
+        """Split content into individual rule blocks.
+
+        The strict lexer finds exact boundaries. If one rule in a multi-rule file is
+        malformed (for example an unclosed string), fall back to splitting at
+        ``rule <name>`` declarations so that each block is parsed, and reported,
+        on its own and valid sibling rules still load under ignore_invalid_rules.
+        """
         from nova.core.rule_file import NovaRuleFileParser
-        return NovaRuleFileParser()._extract_rule_blocks_optimized(content)
+        from nova.core.parser import NovaParserError
+        try:
+            return NovaRuleFileParser()._extract_rule_blocks_optimized(content)
+        except NovaParserError:
+            import re
+            blocks = re.split(r'(?=^[ \t]*rule\s+\w+)', content, flags=re.MULTILINE)
+            blocks = [block for block in blocks if block.strip()]
+            if blocks and not re.match(r'\s*rule\s+\w+', blocks[0]):
+                # Drop a leading comment header; keep stray text so it is reported.
+                leading = [line.strip() for line in blocks[0].splitlines()]
+                if all(not line or line.startswith(("#", "//")) for line in leading):
+                    blocks = blocks[1:]
+            if not blocks:
+                raise
+            return blocks
 
     def _initialize_evaluators(self) -> None:
         """Initialize shared evaluators (semantic, LLM) - load once, share across all matchers."""
@@ -304,6 +325,20 @@ class Nova:
             redaction["normalized"] = True
         return normalized_result
 
+    def _warn_if_decision_disabled(self, rules: Optional[List[NovaRule]] = None) -> None:
+        """Log once when typed llm questions are loaded but Decision is not enabled."""
+        from nova.evaluators.decision.engine import disabled_decision_rules
+        names = disabled_decision_rules(rules if rules is not None else self._rules, self._matchers)
+        if not names:
+            return
+        import logging
+        shown = ", ".join(names[:5]) + (f", +{len(names) - 5} more" if len(names) > 5 else "")
+        logging.getLogger("nova.decision").warning(
+            "Decision models are disabled; %d rule(s) with typed llm questions (%s) will be reported "
+            "in ScanResult.incomplete_rules whenever a typed answer is needed. Enable with "
+            "decision_config={'enabled': True}, NOVA_DECISION_ENABLED=true, or 'enabled = true' "
+            "under [decision] in the NOVA config.", len(names), shown)
+
     def _initialize_matchers(self) -> None:
         """Create matchers for all rules, sharing evaluators."""
         if any(rule.decision for rule in self._rules) and self._decision_evaluator is None:
@@ -347,6 +382,7 @@ class Nova:
         all_redactions = []
         scan_warnings: List[str] = []
         rule_warnings: Dict[str, List[str]] = {}
+        rule_callbacks: List[Any] = []
 
         causes = []
         if any(rule.decision for rule in self._rules):
@@ -547,9 +583,14 @@ class Nova:
                     sanitized_text = redaction_result.text
                     all_redactions.extend(redaction_result.redactions)
 
-            # Execute callback if defined in policy
+            # Policy callbacks run only once the scan is known to return normally.
             if policy_rule.callback:
-                policy_rule.callback(match)
+                rule_callbacks.append((policy_rule.callback, match))
+
+        incomplete = {}
+        if any(rule.decision for rule in self._rules):
+            from nova.evaluators.decision.engine import incomplete_rules
+            incomplete = incomplete_rules(results)
 
         # Create result
         scan_result = ScanResult(
@@ -561,14 +602,9 @@ class Nova:
             rule_warnings=rule_warnings,
             decision_results={rule.name: result["decision_results"] for rule, result in results if rule.decision},
             decision_batches={rule.name: result.get("decision_batches", []) for rule, result in results if rule.decision},
-            evaluation_complete=not causes,
+            evaluation_complete=not causes and not incomplete,
+            incomplete_rules=incomplete,
         )
-
-        # Execute global callbacks
-        if scan_result.blocked and self._on_block:
-            self._on_block(scan_result)
-        elif scan_result.flagged and self._on_flag:
-            self._on_flag(scan_result)
 
         # Debug output
         if debug or (debug is None and self._debug):
@@ -586,8 +622,19 @@ class Nova:
             self._print_debug(text, scan_result, scan_elapsed_ms, fast_count, llm_count, skipped_llm_count, skip_reason)
 
         if causes:
+            # Raise before any callback: callers handle the partial result themselves.
             from nova.core.decision import NovaEvaluationError
             raise NovaEvaluationError(scan_result, causes)
+
+        for callback, match in rule_callbacks:
+            callback(match)
+
+        # Execute global callbacks
+        if scan_result.blocked and self._on_block:
+            self._on_block(scan_result)
+        elif scan_result.flagged and self._on_flag:
+            self._on_flag(scan_result)
+
         return scan_result
 
     async def scan_async(self, text: str, *, decision_state=None, skip_decision=False, skip_llm=False) -> ScanResult:
@@ -796,6 +843,7 @@ class Nova:
             create_llm_evaluator=False,
             decision_config=self._decision_options, decision_evaluator=self._decision_evaluator
         )
+        self._warn_if_decision_disabled([rule])
 
     def add_policy_rule(self, pattern: str, config: Dict) -> None:
         """Add a policy rule."""

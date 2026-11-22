@@ -57,6 +57,9 @@ class ScanResult:
     decision_results: Dict[str, Any] = field(default_factory=dict)
     decision_batches: Dict[str, Any] = field(default_factory=dict)
     evaluation_complete: bool = True
+    # Rules whose outcome stayed unknown, mapped to "ref: reason" entries
+    # (for example "llm.$scope: disabled"). Non-empty means evaluation_complete is False.
+    incomplete_rules: Dict[str, List[str]] = field(default_factory=dict)
 
     @property
     def blocked(self) -> bool:
@@ -173,7 +176,8 @@ class ScanResult:
         }
         if self.decision_results or not self.evaluation_complete:
             result.update(decision_results=self.decision_results, decision_batches=self.decision_batches,
-                          evaluation_complete=self.evaluation_complete)
+                          evaluation_complete=self.evaluation_complete,
+                          incomplete_rules=self.incomplete_rules)
             for item, match in zip(result["matches"], self.matches):
                 if match.rule_name in self.decision_results:
                     item["matching_decision"] = match.matching_decision

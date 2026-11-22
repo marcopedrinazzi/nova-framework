@@ -5,18 +5,39 @@ import functools
 import inspect
 
 from nova.core.decision import NovaEvaluationError
-from .exceptions import NovaBlockedError
+from .exceptions import NovaBlockedError, NovaConfigError
 from .result import ScanResult
+
+
+def _scan_parameter(func, signature, param_name):
+    """Resolve where the scanned argument lives, failing at decoration time if nowhere."""
+    parameters = signature.parameters
+    named = parameters.get(param_name)
+    if named is not None and named.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        return param_name, None
+    var_keyword = next((p.name for p in parameters.values() if p.kind is inspect.Parameter.VAR_KEYWORD), None)
+    if var_keyword is not None:
+        return None, var_keyword
+    available = ", ".join(p.name for p in parameters.values()
+                          if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD))
+    raise NovaConfigError(
+        f"protect(): {getattr(func, '__qualname__', func)!s} has no parameter '{param_name}' to scan; "
+        f"pass param_name= one of: {available or '(none)'}"
+    )
 
 
 def protect_decision(nova, func, action, severity, param_name, on_block, raise_on_block,
                 skip_llm, skip_decision, state_factory):
     signature = inspect.signature(func)
+    named, var_keyword = _scan_parameter(func, signature, param_name)
+
+    def arguments_holding_text(bound):
+        return bound.arguments if named else bound.arguments.setdefault(var_keyword, {})
 
     def prepare(args, kwargs):
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        text = bound.arguments.get(param_name)
+        text = arguments_holding_text(bound).get(param_name)
         if not isinstance(text, str):
             raise NovaEvaluationError(ScanResult("", "", evaluation_complete=False), ["missing_scan_text"])
         try:
@@ -27,7 +48,8 @@ def protect_decision(nova, func, action, severity, param_name, on_block, raise_o
 
     def check(result, bound):
         if not result.evaluation_complete:
-            raise NovaEvaluationError(result, ["incomplete_evaluation"])
+            reasons = sorted({entry for entries in result.incomplete_rules.values() for entry in entries})
+            raise NovaEvaluationError(result, reasons or ["incomplete_evaluation"])
         if nova._should_block(result, action, severity):
             if on_block:
                 return False, on_block(result)
@@ -35,7 +57,7 @@ def protect_decision(nova, func, action, severity, param_name, on_block, raise_o
                 raise NovaBlockedError(result)
             return False, None
         if result.redacted:
-            bound.arguments[param_name] = result.sanitized_text
+            arguments_holding_text(bound)[param_name] = result.sanitized_text
         return True, None
 
     @functools.wraps(func)

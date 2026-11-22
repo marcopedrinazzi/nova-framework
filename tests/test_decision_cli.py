@@ -163,6 +163,22 @@ def test_json_batch_is_machine_readable(monkeypatch, tmp_path, capsys):
     assert all(output["decision_results"]["Risk"]["$scope"]["answer"]["noul"] == .8 for output in outputs)
 
 
+def test_cli_disabled_reports_incomplete_with_hint_and_keeps_other_matches(monkeypatch, tmp_path, capsys):
+    rule_text = source("llm.$scope") + '\nrule Keyword {\nkeywords:\n$bad = "attack"\ncondition:\nkeywords.$bad\n}\n'
+    with pytest.raises(SystemExit) as caught:
+        invoke(monkeypatch, tmp_path, ["--prompt", "an attack", "--json"], rule_text=rule_text)
+    assert caught.value.code == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["matches"][0]["rule_name"] == "Keyword"
+    assert output["incomplete_rules"] == {"Risk": ["llm.$scope: disabled"]}
+    assert "--decision" in output["hint"] and "errors" not in output
+
+    with pytest.raises(SystemExit):
+        invoke(monkeypatch, tmp_path, ["--prompt", "an attack"], rule_text=rule_text)
+    text = capsys.readouterr().out
+    assert "MATCH  Keyword" in text and "INCOMPLETE  Risk" in text and "Hint:" in text
+
+
 def test_cli_name_is_provider_neutral(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["novarun", "--help"])
     with pytest.raises(SystemExit) as caught:

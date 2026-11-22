@@ -8,6 +8,13 @@ from .condition import compile_condition, declarations
 from .projection import record
 from .state import snapshot_state
 
+# Reasons a required check was deliberately not run: the operator has not enabled
+# Decision, the caller asked to skip, or no evaluator is configured. Such rules are
+# reported as incomplete (allowed/clean are False) but never raise, so a missing
+# configuration cannot break scans for unrelated rules. Every other reason is a
+# runtime failure of a check that should have run, and raises NovaEvaluationError.
+OMITTED_REASONS = frozenset({"disabled", "skipped", "llm_not_configured", "semantics_not_configured"})
+
 
 @dataclass
 class Progress:
@@ -64,19 +71,26 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
             ref = f"{namespace}.{name}"
             if ref not in node.needed(progress.values):
                 continue
+            omitted = None
+            if section == "semantics" and matcher.semantic_evaluator is None:
+                omitted = "semantics_not_configured"
+            elif section == "llm" and skip_llm:
+                omitted = "skipped"
+            elif section == "llm" and matcher.llm_evaluator is None:
+                omitted = "llm_not_configured"
+            if omitted:
+                progress.errors[ref] = omitted
+                progress.values[ref] = Predicate.UNKNOWN
+                continue
             try:
                 if section == "keywords":
                     matched = matcher.keyword_evaluator.evaluate(pattern, text, name)
                 elif section == "semantics":
-                    if matcher.semantic_evaluator is None:
-                        raise RuntimeError("unavailable")
                     matched, score = matcher.semantic_evaluator.evaluate(pattern, text)
                     if getattr(matcher.semantic_evaluator, "last_error", None):
                         raise RuntimeError("evaluation_error")
                     progress.semantic_scores[name] = score
                 else:
-                    if skip_llm or matcher.llm_evaluator is None:
-                        raise RuntimeError("unavailable")
                     matched, confidence, details = matcher.llm_evaluator.evaluate_prompt(
                         pattern.pattern, text, temperature=pattern.threshold)
                     if isinstance(details, dict) and details.get("error"):
@@ -84,7 +98,7 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
                     progress.llm_scores[name], progress.llm_details[name] = confidence, details
                 progress.values[ref] = Predicate.TRUE if matched else Predicate.FALSE
             except Exception:
-                progress.errors[ref] = section + "_unavailable"
+                progress.errors[ref] = section + "_error"
                 progress.values[ref] = Predicate.UNKNOWN
     outcome = node.evaluate(progress.values)
     if not fast or outcome is not Predicate.UNKNOWN:
@@ -107,8 +121,24 @@ def evaluate(matcher, text, state, *, skip_llm=False, skip_decision=False, fast=
                   "all_semantic_matches": {}, "all_llm_matches": {}, "all_llm_details": progress.llm_details},
     }
     if outcome is Predicate.UNKNOWN and not fast:
-        raise NovaEvaluationError(result, [progress.errors.get(ref, "unavailable") for ref in node.needed(progress.values)])
+        unresolved = {ref: progress.errors.get(ref, "unavailable") for ref in sorted(node.needed(progress.values))}
+        result["unresolved"] = [f"{ref}: {reason}" for ref, reason in unresolved.items()]
+        if any(reason not in OMITTED_REASONS for reason in unresolved.values()):
+            raise NovaEvaluationError(result, list(unresolved.values()))
     return result, progress
+
+
+def incomplete_rules(results):
+    """Map each rule whose outcome stayed unknown to its unresolved "ref: reason" entries."""
+    return {rule.name: result["unresolved"] for rule, result in results if result.get("unresolved")}
+
+
+def disabled_decision_rules(rules, matchers):
+    """Names of rules with typed questions whose matcher has Decision disabled."""
+    return [rule.name for rule in rules
+            if rule.decision and rule.name in matchers
+            and matchers[rule.name].decision_config is not None
+            and not matchers[rule.name].decision_config.enabled]
 
 
 def collect(rules, matchers, original_text, text, *, context=None, skip_llm=False, skip_decision=False, parallel=True, stop_on_match=None):

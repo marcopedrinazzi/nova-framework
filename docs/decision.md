@@ -116,13 +116,28 @@ answers, disabled evaluation, invalid responses, and provider failures are
 `false and unknown` is false; `true or unknown` is true. Quantifiers count all
 declared matching variables, including unresolved ones.
 
-If unresolved evidence is still required for a rule's outcome, scans raise
-`NovaEvaluationError`. The exception's `result` and `partial_result` retain definite
-findings and diagnostics. SDK partial results have `evaluation_complete=False`,
-`allowed=False`, and `clean=False`. A confirmed block remains a block even when
-another rule fails. An irrelevant failed check does not invalidate a condition
-already determined by other evidence. A negative rule result does not certify
-safety, and task deviation alone is not proof of compromise.
+When unresolved evidence is still required for a rule's outcome, what happens
+depends on why it is unresolved:
+
+- **A check that ran and failed** (provider or transport error, invalid or missing
+  answer, insufficient or missing confidence, invalid state) raises
+  `NovaEvaluationError`. The exception's `result` and `partial_result` retain definite
+  findings and diagnostics. No policy or global callback runs for a scan that raises.
+- **A check that was not run** (Decision disabled, `skip_decision=True`,
+  `skip_llm=True`, or no LLM/semantic evaluator configured) does not raise. The rule
+  cannot match through that check and is listed in `incomplete_rules`, for example
+  `{"Risk": ["llm.$scope: disabled"]}`. A missing configuration therefore never
+  breaks scans for unrelated rules. When rules with typed questions are loaded while
+  Decision is disabled, the SDK logs one warning on the `nova.decision` logger.
+
+Either way the evaluation is incomplete: SDK results have `evaluation_complete=False`,
+`allowed=False`, and `clean=False`, and protection decorators refuse to run the
+protected function. `NovaScanner.scan_with_details` reports the same
+`evaluation_complete` and `incomplete_rules` keys; `NovaScanner.scan` returns only
+matched rules. A confirmed block remains a block even when another rule fails. An
+irrelevant failed check does not invalidate a condition already determined by other
+evidence. A negative rule result does not certify safety, and task deviation alone
+is not proof of compromise.
 
 In the Python SDK, a keyword or semantic match whose policy action is `BLOCK`
 skips remaining Decision and LLM calls, following the existing LLM evaluation
@@ -177,12 +192,16 @@ review; they cannot prevent an action that already happened.
 `NovaMatcher.check_prompt`, and standalone SDK scan helpers accept keyword-only
 `decision_state` and `skip_decision`. `skip_llm=True` skips both quoted and typed
 LLM checks; `skip_decision=True` skips only typed checks. Skipping a required
-Decision check is an incomplete evaluation, not permission to proceed.
+Decision check is an incomplete evaluation, not permission to proceed: the scan
+returns with the rule in `incomplete_rules` and `allowed=False`.
 
 For protection decorators, `decision_state_factory` receives a dictionary of bound
 function arguments, including defaults. It runs once before the scan. Both sync
-and async wrappers stop on unresolved required checks, even with
-`raise_on_block=False`. See `examples/decision/demo.py` for a validated factory and a
+and async wrappers raise `NovaEvaluationError` on any incomplete evaluation, failed
+or not run, even with `raise_on_block=False`; its `causes` name each unresolved
+check, such as `llm.$scope: disabled`. A `param_name` the function does not accept
+raises `NovaConfigError` when the function is decorated; functions that take
+`**kwargs` are scanned through the keyword argument named `param_name`. See `examples/decision/demo.py` for a validated factory and a
 stub tool that runs only after assessment.
 
 ### Results
@@ -221,8 +240,11 @@ with the supplied context; ensure that context is appropriate for every action.
 Decision CLI output shows a readable MATCH / NO MATCH / INCOMPLETE heading for each
 rule, followed by each evaluated Noul probability, Score value or selected Choice
 category. Thresholds, confidence requirements and unresolved reasons appear next
-to the evidence. Raw text/context is not printed. Required runtime failures exit 1; invalid Decision options
-or declarations exit 2. `--decision` and `--skip-decision` are mutually exclusive.
+to the evidence. Raw text/context is not printed. Any incomplete evaluation exits 1,
+whether a check failed or was not run; when Decision is disabled the output adds a hint
+to pass `--decision`, and JSON output adds `incomplete_rules` and `hint`. Matches from
+other rules are still reported. Invalid Decision options or declarations exit 2.
+`--decision` and `--skip-decision` are mutually exclusive.
 
 Add `--verbose` (or `-v`) to include elapsed time, effective Decision provider/model,
 each rule's condition and outcome, matched predicates, evaluation warnings, and

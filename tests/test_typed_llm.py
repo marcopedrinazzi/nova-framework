@@ -4,7 +4,7 @@ import pytest
 
 from nova.core.parser import NovaParser, NovaParserError
 from nova.core.matcher import NovaMatcher
-from nova.core.decision import DecisionBatch, NovaEvaluationError
+from nova.core.decision import DecisionBatch
 from nova.evaluators.decision.projection import validate_answer, project
 from nova.sdk import Nova
 
@@ -82,8 +82,9 @@ def test_typed_only_llm_does_not_initialize_chat_provider(monkeypatch):
     nova = Nova(rules=[rule], decision_config={"enabled": True}, decision_evaluator=typed)
     assert nova.scan("input").matches
     create.assert_not_called()
-    with pytest.raises(NovaEvaluationError):
-        nova.scan("input", skip_llm=True)
+    skipped = nova.scan("input", skip_llm=True)
+    assert not skipped.evaluation_complete and not skipped.allowed
+    assert all(entry.endswith(": skipped") for entry in skipped.incomplete_rules["Mixed"])
     assert len(typed.calls) == 1
 
 

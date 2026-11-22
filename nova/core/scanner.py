@@ -185,7 +185,9 @@ class NovaScanner:
             prompt: The prompt text to scan
 
         Returns:
-            List of match results for rules that matched
+            List of match results for rules that matched. Rules whose required
+            checks were not run (Decision disabled or skipped) cannot appear here;
+            use scan_with_details() to see them under ``incomplete_rules``.
         """
         if any(rule.decision for rule in self.rules):
             details = self.scan_with_details(prompt, decision_state=decision_state, skip_decision=skip_decision, skip_llm=skip_llm)
@@ -217,14 +219,17 @@ class NovaScanner:
         if any(rule.decision for rule in self.rules):
             from nova.evaluators.decision.engine import collect
             from nova.core.decision import NovaEvaluationError
+            from nova.evaluators.decision.engine import incomplete_rules
             results, causes = collect(self.rules, self._matchers, prompt, normalize_unicode(prompt),
                                      context=decision_state, skip_llm=skip_llm, skip_decision=skip_decision)
             matches = [{"rule_name": rule.name, "meta": rule.meta} for rule, result in results if result["matched"]]
+            incomplete = incomplete_rules(results)
             details = {"prompt": prompt, "matched_any": bool(matches), "matches": matches,
                        "match_count": len(matches), "scanned_rules": len(self.rules),
                        "detailed_results": {rule.name: result for rule, result in results},
                        "decision_results": {rule.name: result["decision_results"] for rule, result in results if rule.decision},
-                       "evaluation_complete": not causes}
+                       "evaluation_complete": not causes and not incomplete,
+                       "incomplete_rules": incomplete}
             if causes:
                 raise NovaEvaluationError(details, causes)
             return details

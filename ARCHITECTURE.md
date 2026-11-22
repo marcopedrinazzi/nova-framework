@@ -85,8 +85,10 @@ lexical rule boundaries with the existing parser. Conditions use the common
 
 `nova/evaluators/decision/` batches typed questions through OpenRouter or Ollama,
 validates answers, and projects them into true, false, or unknown predicates. Its
-scan-local engine is shared by the matcher, scanner, and SDK. Required unresolved
-checks raise `NovaEvaluationError`; a definite SDK block in the fast phase skips remaining model calls.
+scan-local engine is shared by the matcher, scanner, and SDK. Required checks that
+fail at runtime raise `NovaEvaluationError`; checks that were not run (Decision disabled
+or skipped) mark the rule incomplete in `incomplete_rules` without raising. A definite
+SDK block in the fast phase skips remaining model calls.
 Rules without typed declarations retain their existing evaluation path.
 
 See the [Decision guide](docs/decision.md) for syntax, configuration, context, and results.

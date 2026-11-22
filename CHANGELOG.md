@@ -8,13 +8,22 @@
 ### Added
 - Decision model questions (`noul`, `choice`, and `score`) under `llm:` through OpenRouter Decisions or Ollama, alongside fully supported quoted LLM checks.
 - Explicit typed-model activation, provider/model configuration, and caller-supplied context through the CLI and SDK.
-- Native typed answers and diagnostics, including probabilities and confidence when supplied. Required unresolved checks raise `NovaEvaluationError` instead of becoming nonmatches.
+- Native typed answers and diagnostics, including probabilities and confidence when supplied. Required checks that fail at runtime raise `NovaEvaluationError` instead of becoming nonmatches.
+- `ScanResult.incomplete_rules` and `scan_with_details()["incomplete_rules"]` list rules whose required checks were not run (Decision disabled or skipped), as `"llm.$name: reason"` entries. These scans return normally with `evaluation_complete`, `allowed` and `clean` all False, so a missing Decision configuration cannot break scanning for unrelated rules. The SDK logs one `nova.decision` warning when typed rules load while Decision is disabled, and the CLI prints a `--decision` hint.
+- Runnable examples in `examples/decision/` (rules, fixture demo, quality and provider-comparison harnesses), referenced from the guides.
 
 ### Changed
 - Rule parsing supports nested typed declarations while preserving existing quoted LLM syntax and temperature semantics.
+- Rule files are read by one shared lexer. Across 281 real rule files, parses are unchanged except where a rule was malformed: an unclosed string or stray text outside a rule is now an error instead of being silently accepted. Files whose only content before the first rule is a comment header now load in the SDK.
+- Policy and global `on_block`/`on_flag` callbacks run after the scan result is final, and never for a scan that raises `NovaEvaluationError`.
+
+### Breaking
+- The `decision:`, `sys1:`, `jev:` and `detection:` sections are rejected with a message to move declarations under `llm:` and reference them as `llm.$name`. The Laya provider was removed; serve compatible models through Ollama instead.
+- `@nova.protect()` binds arguments by signature. Previously a missing argument skipped the scan and the scanner fell back to the first positional argument. Now a missing, `None` or non-string scan argument raises `NovaEvaluationError` (`missing_scan_text`) before the function runs, and a `param_name` that the function does not accept raises `NovaConfigError` at decoration time. Functions taking `**kwargs` are scanned through the keyword named by `param_name`.
 
 ### Fixed
 - `@nova.protect()` scans default argument values and bound-method arguments, applies rules added after decoration, and respects `skip_decision`.
+- In the SDK, a malformed rule in a multi-rule file no longer hides its valid siblings when `ignore_invalid_rules=True`; the broken block is reported by number.
 
 ## [0.3.1] - 2026-09-21
 

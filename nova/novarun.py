@@ -562,12 +562,21 @@ def run_decision_cli(args, parser, blocks, prompts):
             details = error.partial_result
             incomplete = True
             causes = error.causes
+        if not details.get("evaluation_complete", False):
+            incomplete = True
         # No prompt/context or credentials in default output. Evidence remains inspectable.
         output = {"prompt_index": index, "evaluation_complete": details.get("evaluation_complete", False),
                   "matches": details.get("matches", []), "decision_results": details.get("decision_results", {})}
         elapsed_ms = (time.perf_counter() - started) * 1000
         if causes:
             output["errors"] = sorted(set(causes))
+        if details.get("incomplete_rules"):
+            output["incomplete_rules"] = details["incomplete_rules"]
+        hint = None
+        if not config.enabled and any(entry.endswith(": disabled")
+                                      for entries in details.get("incomplete_rules", {}).values() for entry in entries):
+            hint = "Decision models are disabled; pass --decision to answer typed llm questions."
+            output["hint"] = hint
         if args.verbose:
             output["elapsed_ms"] = round(elapsed_ms, 3)
             output["decision_config"] = {"enabled": config.enabled, "provider": config.provider, "model": config.model}
@@ -590,6 +599,8 @@ def run_decision_cli(args, parser, blocks, prompts):
         else:
             from nova.utils.decision_output import format_decision_output
             print(format_decision_output(details, index, elapsed_ms, config, args.verbose, causes))
+            if hint:
+                print(f"Hint: {hint}\n")
     if incomplete:
         sys.exit(1)
 
@@ -619,9 +630,9 @@ def main():
     
     decision_group = parser.add_mutually_exclusive_group()
     decision_group.add_argument('--decision', dest='decision_enabled', action='store_true', default=None,
-                           help='Enable Decision decision using the selected provider')
+                           help='Answer typed llm questions (noul/choice/score) with the selected decision provider')
     decision_group.add_argument('--skip-decision', dest='decision_enabled', action='store_false',
-                           help='Disable Decision; unresolved required checks are errors')
+                           help='Do not ask typed llm questions; rules that need an answer are reported as INCOMPLETE')
     parser.add_argument('--decision-provider', choices=('openrouter', 'ollama'), help='Decision provider (default: openrouter)')
     parser.add_argument('--decision-model', help='OpenRouter model ID or Ollama decision model name')
     parser.add_argument('--decision-host', help='Ollama server URL (default: OLLAMA_HOST or http://localhost:11434)')

@@ -111,8 +111,10 @@ def test_llm_remains_independent_and_uses_temperature():
     matcher = NovaMatcher(r, llm_evaluator=llm, decision_config={"enabled": True}, decision_evaluator=evaluator)
     assert matcher.check_prompt("synthetic")["matched"]
     assert llm.evaluate_prompt.call_args.kwargs == {"temperature": .3}
-    with pytest.raises(NovaEvaluationError):
-        matcher.check_prompt("synthetic", skip_llm=True)
+    # A deliberate skip leaves the rule incomplete; it is reported, not raised.
+    skipped = matcher.check_prompt("synthetic", skip_llm=True)
+    assert not skipped["matched"] and not skipped["evaluation_complete"]
+    assert skipped["unresolved"] == ["llm.$intent: skipped", "llm.$scope: skipped"]
     assert len(evaluator.calls) == 1
 
 
@@ -133,9 +135,13 @@ def test_disabled_and_skip_decision_never_call_injected_evaluator(monkeypatch):
     for options, skip in [({}, False), ({"enabled": True}, True)]:
         evaluator = FixtureEvaluator()
         nova = Nova(rules=[rule()], decision_config=options, decision_evaluator=evaluator)
-        with pytest.raises(NovaEvaluationError):
-            nova.scan("synthetic", skip_decision=skip)
+        result = nova.scan("synthetic", skip_decision=skip)
         assert not evaluator.calls
+        # Incomplete, never clean or allowed, but not an exception.
+        assert not result.evaluation_complete and not result.allowed and not result.clean
+        reason = "skipped" if skip else "disabled"
+        assert result.incomplete_rules == {"Risk": [f"llm.${name}: {reason}" for name in ("operation", "risk", "scope")]}
+        assert result.to_dict()["incomplete_rules"] == result.incomplete_rules
 
 
 def test_concurrent_scans_have_separate_state_and_evidence():

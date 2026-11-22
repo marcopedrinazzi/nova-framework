@@ -159,8 +159,10 @@ else:
 ### Method 2: Decorator Pattern (Recommended)
 
 `protect` scans the named argument, including its default value, against the rules
-loaded at call time. Set `param_name` when the argument is not named `prompt`. A
-missing or non-string scan argument raises `NovaEvaluationError` before execution.
+loaded at call time. Set `param_name` when the argument is not named `prompt`; a
+`param_name` the function does not accept raises `NovaConfigError` at decoration time.
+Functions that take `**kwargs` are scanned through that keyword. A missing or
+non-string scan argument raises `NovaEvaluationError` before execution.
 
 ```python
 from nova.sdk import Nova, NovaBlockedError
@@ -359,7 +361,8 @@ the same options. `skip_llm=True` skips all LLM checks, including typed question
 `skip_decision=True` skips only typed questions.
 
 Inspect `result.decision_results` for all typed answers and `result.decision_batches` for
-request metadata. Catch `NovaEvaluationError` for unresolved required checks;
-its `partial_result` preserves definite findings but cannot report allowed or
-clean. Protection decorators accept `decision_state_factory` and never execute after
+request metadata. Catch `NovaEvaluationError` for required checks that ran and
+failed; its `partial_result` preserves definite findings but cannot report allowed
+or clean. Checks that were not run (Decision disabled or skipped) do not raise: the
+rule appears in `result.incomplete_rules` and `allowed`/`clean` are False. Protection decorators accept `decision_state_factory` and never execute after
 an unresolved required check. See the [full guide](../../docs/decision.md).
