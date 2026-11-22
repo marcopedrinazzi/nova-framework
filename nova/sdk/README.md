@@ -147,7 +147,9 @@ nova = Nova(
 
 result = nova.scan("user input here")
 
-if result.blocked:
+if not result.evaluation_complete:
+    print(f"Evaluation incomplete: {result.incomplete_rules}")
+elif result.blocked:
     print(f"Blocked by: {result.blocked_rules}")
 elif result.flagged:
     print(f"Flagged by: {result.flagged_rules}")
@@ -204,8 +206,9 @@ result = nova.scan("some text")
 result.blocked        # True if any BLOCK action triggered
 result.flagged        # True if any FLAG action triggered
 result.redacted       # True if content was redacted
-result.allowed        # True if not blocked
-result.clean          # True if no rules matched at all
+result.allowed        # True if evaluation is complete and no BLOCK action triggered
+result.clean          # True if evaluation is complete and no rules matched
+result.evaluation_complete  # False if required Decision checks are unresolved
 
 # Text
 result.original_text   # Original input
@@ -218,6 +221,7 @@ result.flagged_rules   # List of rule names that flagged
 result.highest_severity # "critical", "high", "medium", or "low"
 result.matches         # List of RuleMatch objects with full details
 result.has_warnings    # True if any rule had degraded evaluation
+result.incomplete_rules  # Unresolved checks grouped by rule name
 result.warnings        # Flat list of semantic/LLM evaluation warnings
 result.rule_warnings   # Warnings grouped by rule name
 ```

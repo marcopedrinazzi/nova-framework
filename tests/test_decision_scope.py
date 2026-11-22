@@ -7,6 +7,11 @@ NovaEvaluationError, and nothing reacts to a scan before that exception.
 
 import asyncio
 import logging
+import sys
+from dataclasses import replace
+from pathlib import Path
+from runpy import run_path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -42,6 +47,32 @@ def test_disabled_typed_rule_does_not_break_unrelated_rules():
     assert result.incomplete_rules == {"Risk": ["llm.$scope: disabled"]}
     assert not result.evaluation_complete and not result.allowed and not result.clean
     assert "llm.$scope: disabled" in result.rule_warnings["Risk"]
+
+
+def test_debug_reports_incomplete_scan_without_matches(capsys):
+    nova = Nova(rules=[rule("llm.$scope")], decision_config={"enabled": False})
+    result = nova.scan("ordinary text", debug=True)
+    scan_output = capsys.readouterr().out
+    result.print_debug()
+    result_output = capsys.readouterr().out
+
+    for output in (scan_output, result_output):
+        assert "Evaluation incomplete" in output
+        assert "input is clean" not in output
+
+
+def test_openai_example_stops_before_sending_incomplete_scan(monkeypatch):
+    nova = Nova(rules=[rule("llm.$scope")], decision_config={"enabled": False})
+    client = Mock()
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=Mock(return_value=client)))
+    monkeypatch.setattr("nova.sdk.Nova", lambda **kwargs: nova)
+    example = Path(__file__).resolve().parents[1] / "examples" / "openai_example.py"
+    chat = run_path(str(example))["chat"]
+
+    with pytest.raises(NovaEvaluationError, match=r"llm\.\$scope: disabled"):
+        chat("ordinary text")
+
+    client.chat.completions.create.assert_not_called()
 
 
 def test_scanner_reports_incomplete_rules_without_raising():
@@ -134,6 +165,58 @@ def test_protection_still_refuses_unevaluated_checks_with_specific_reasons(async
         asyncio.run(tool("synthetic")) if async_mode else tool("synthetic")
     assert caught.value.causes == ["llm.$scope: disabled"]
     assert not calls
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("fast_severity,enabled,error_type,blocked_rule,calls", [
+    ("low", True, NovaBlockedError, "Risk", 1),
+    ("low", False, NovaEvaluationError, None, 0),
+    ("high", True, NovaBlockedError, "Keyword", 0),
+])
+def test_protect_early_block_respects_severity(async_mode, fast_severity, enabled, error_type, blocked_rule, calls):
+    keyword = replace(KEYWORD_RULE, meta={"severity": fast_severity})
+    risk = replace(rule("llm.$scope"), meta={"severity": "high"})
+    evaluator = FixtureEvaluator()
+    nova = Nova(rules=[keyword, risk], policy={"Keyword": "block"},
+                decision_config={"enabled": enabled}, decision_evaluator=evaluator)
+    protect = nova.protect(action="block", severity="high")
+
+    if async_mode:
+        @protect
+        async def tool(prompt):
+            pytest.fail("Protected function ran")
+    else:
+        @protect
+        def tool(prompt):
+            pytest.fail("Protected function ran")
+
+    with pytest.raises(error_type) as caught:
+        asyncio.run(tool("an attack")) if async_mode else tool("an attack")
+
+    assert len(evaluator.calls) == calls
+    if blocked_rule:
+        assert blocked_rule in caught.value.result.blocked_rules
+    else:
+        assert caught.value.causes == ["llm.$scope: disabled"]
+
+
+def test_protect_early_block_respects_severity_for_legacy_llm():
+    keyword = replace(KEYWORD_RULE, meta={"severity": "low"})
+    legacy_llm = NovaParser().parse('rule Legacy {\nmeta:\nseverity = "high"\nllm:\n$x = "Match?"(0.1)\ncondition:\nllm.$x\n}')
+    nova = Nova(rules=[keyword, legacy_llm], policy={"Keyword": "block"})
+    llm = Mock()
+    llm.evaluate_prompt.return_value = (True, .9, {})
+    nova._matchers["Legacy"].llm_evaluator = llm
+
+    @nova.protect(action="block", severity="high")
+    def tool(prompt):
+        pytest.fail("Protected function ran")
+
+    with pytest.raises(NovaBlockedError) as caught:
+        tool("an attack")
+
+    assert "Legacy" in caught.value.result.blocked_rules
+    llm.evaluate_prompt.assert_called_once()
 
 
 def test_protect_rejects_missing_parameter_at_decoration_time():

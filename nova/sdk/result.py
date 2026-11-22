@@ -10,6 +10,9 @@ from typing import Dict, List, Optional, Any
 from .policy import Action
 
 
+_SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
 @dataclass
 class RuleMatch:
     """Details about a single matched rule."""
@@ -78,25 +81,25 @@ class ScanResult:
 
     @property
     def allowed(self) -> bool:
-        """Returns True if no blocking actions were triggered."""
+        """Returns True if evaluation is complete and no blocking actions were triggered."""
         return self.evaluation_complete and not self.blocked
 
     @property
     def clean(self) -> bool:
-        """Returns True if no rules matched at all."""
+        """Returns True if evaluation is complete and no rules matched."""
         return self.evaluation_complete and len(self.matches) == 0
 
     @property
     def highest_severity(self) -> Optional[str]:
         """Returns the highest severity level from all matches."""
-        severity_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
         max_severity = None
         max_score = 0
 
         for match in self.matches:
             sev = (match.severity or match.meta.get("severity", "")).lower()
-            if sev in severity_order and severity_order[sev] > max_score:
-                max_score = severity_order[sev]
+            score = _SEVERITY_ORDER.get(sev, 0)
+            if score > max_score:
+                max_score = score
                 max_severity = sev
 
         return max_severity
@@ -205,8 +208,12 @@ class ScanResult:
             for warning in self.warnings:
                 print(f"  - {warning}")
 
-        if not self.matches:
+        if not self.evaluation_complete:
+            print("[NOVA DEBUG] Evaluation incomplete")
+        elif self.clean:
             print("[NOVA DEBUG] No matches - input is clean")
+
+        if not self.matches:
             return
 
         for i, match in enumerate(self.matches, 1):

@@ -32,6 +32,23 @@ def test_cli_disabled_no_network(monkeypatch, tmp_path, capsys):
     request.assert_not_called()
 
 
+def test_cli_single_keyword_rule_completes_with_typed_sibling(monkeypatch, tmp_path, capsys):
+    keyword_rule = '''rule First {
+    keywords:
+        $sample = "sample"
+    condition:
+        keywords.$sample
+}
+'''
+    rules = keyword_rule + source("llm.$scope", name="Second")
+    invoke(monkeypatch, tmp_path, ["--single", "--json", "--prompt", "sample"], rules)
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["evaluation_complete"] is True
+    assert [match["rule_name"] for match in output["matches"]] == ["First"]
+    assert output["decision_results"] == {}
+
+
 def test_cli_context_batch_model_and_enablement(monkeypatch, tmp_path, capsys):
     contexts = []
     fixture = FixtureEvaluator()

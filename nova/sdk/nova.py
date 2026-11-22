@@ -23,7 +23,7 @@ from nova.evaluators.condition import can_llm_change_outcome
 from nova.utils.helpers import normalize_unicode
 
 from .policy import NovaPolicy, Action
-from .result import ScanResult, RuleMatch
+from .result import ScanResult, RuleMatch, _SEVERITY_ORDER
 from .redaction import Redactor
 from .exceptions import NovaConfigError
 
@@ -53,6 +53,8 @@ class Nova:
         )
 
         result = nova.scan(user_prompt)
+        if not result.evaluation_complete:
+            return "Evaluation incomplete"
         if result.blocked:
             return "Request blocked"
         prompt = result.sanitized_text
@@ -354,7 +356,8 @@ class Nova:
             )
 
     def scan(self, text: str, debug: Optional[bool] = None, parallel: bool = True,
-             skip_llm: bool = False, *, decision_state=None, skip_decision=False) -> ScanResult:
+             skip_llm: bool = False, *, decision_state=None, skip_decision=False,
+             _block_severity: Optional[str] = None) -> ScanResult:
         """
         Scan text against all loaded rules.
 
@@ -384,6 +387,11 @@ class Nova:
         rule_warnings: Dict[str, List[str]] = {}
         rule_callbacks: List[Any] = []
 
+        def is_early_block(rule_name, rule_meta):
+            if _block_severity and not self._severity_gte(rule_meta.get("severity") or "", _block_severity):
+                return False
+            return self._policy.get_action_for_match(rule_name, rule_meta).action == Action.BLOCK
+
         causes = []
         if any(rule.decision for rule in self._rules):
             from nova.evaluators.decision.engine import collect
@@ -393,7 +401,7 @@ class Nova:
 
             def stop_on_match(rule):
                 nonlocal early_block, skipped_llm_count
-                if self._policy.get_action_for_match(rule.name, rule.meta).action == Action.BLOCK:
+                if is_early_block(rule.name, rule.meta):
                     early_block = True
                     skipped_llm_count = len(rules_with_llm)
                     return True
@@ -431,9 +439,7 @@ class Nova:
                     if result.get('matched', False):
                         # Rule matched without needing LLM - great!
                         fast_results.append((rule, result))
-                        rule_meta = result.get("meta", {})
-                        policy_rule = self._policy.get_action_for_match(result["rule_name"], rule_meta)
-                        if policy_rule.action == Action.BLOCK:
+                        if is_early_block(result["rule_name"], result.get("meta", {})):
                             early_block = True
                     else:
                         # Rule didn't match yet - may need LLM evaluation later
@@ -444,9 +450,7 @@ class Nova:
                     if result:
                         fast_results.append((rule, result))
                         if result.get('matched', False):
-                            rule_meta = result.get("meta", {})
-                            policy_rule = self._policy.get_action_for_match(result["rule_name"], rule_meta)
-                            if policy_rule.action == Action.BLOCK:
+                            if is_early_block(result["rule_name"], result.get("meta", {})):
                                 early_block = True
 
             # PHASE 2: LLM evaluation (only if no BLOCK found and not skipped)
@@ -637,7 +641,8 @@ class Nova:
 
         return scan_result
 
-    async def scan_async(self, text: str, *, decision_state=None, skip_decision=False, skip_llm=False) -> ScanResult:
+    async def scan_async(self, text: str, *, decision_state=None, skip_decision=False, skip_llm=False,
+                         _block_severity: Optional[str] = None) -> ScanResult:
         """
         Async version of scan.
 
@@ -650,7 +655,10 @@ class Nova:
             ScanResult with all match details and actions
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, functools.partial(self.scan, text, decision_state=decision_state, skip_decision=skip_decision, skip_llm=skip_llm))
+        scan_options = {"decision_state": decision_state, "skip_decision": skip_decision, "skip_llm": skip_llm}
+        if _block_severity:
+            scan_options["_block_severity"] = _block_severity
+        return await loop.run_in_executor(None, functools.partial(self.scan, text, **scan_options))
 
     def protect(
         self,
@@ -710,8 +718,8 @@ class Nova:
 
     def _severity_gte(self, sev1: str, sev2: str) -> bool:
         """Check if severity1 >= severity2."""
-        order = {"low": 1, "medium": 2, "high": 3, "critical": 4}
-        return order.get(sev1.lower(), 0) >= order.get(sev2.lower(), 0)
+        rank = _SEVERITY_ORDER.get(sev1.lower(), 0)
+        return rank > 0 and rank >= _SEVERITY_ORDER.get(sev2.lower(), 0)
 
     def _print_init_debug(self, init_time_ms: float) -> None:
         """Print initialization debug info."""
@@ -762,8 +770,12 @@ class Nova:
         print(f"[NOVA DEBUG] Matches found: {result.match_count}")
         print(f"[NOVA DEBUG] Scan time: {scan_time_ms:.2f}ms")
 
-        if not result.matches:
+        if not result.evaluation_complete:
+            print("[NOVA DEBUG] Evaluation incomplete")
+        elif result.clean:
             print("[NOVA DEBUG] No matches - input is clean")
+
+        if not result.matches:
             return
 
         for i, match in enumerate(result.matches, 1):

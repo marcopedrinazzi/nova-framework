@@ -259,7 +259,9 @@ class NovaScanner:
             'matches': all_matches,
             'match_count': len(all_matches),
             'scanned_rules': len(self.rules),
-            'detailed_results': all_results
+            'detailed_results': all_results,
+            'evaluation_complete': True,
+            'incomplete_rules': {},
         }
     
     def get_rule_names(self) -> List[str]:

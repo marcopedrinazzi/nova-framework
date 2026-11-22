@@ -20,7 +20,7 @@ Usage:
 
 import os
 from openai import OpenAI
-from nova.sdk import Nova, Action, NovaBlockedError
+from nova.sdk import Nova, Action, NovaBlockedError, NovaEvaluationError
 
 
 # Initialize OpenAI client
@@ -57,9 +57,13 @@ def chat(user_message: str) -> str:
 
     Raises:
         NovaBlockedError: If the message is blocked by security policy
+        NovaEvaluationError: If the scan is incomplete
     """
     # Scan the user message
     scan_result = nova.scan(user_message)
+    if not scan_result.evaluation_complete:
+        reasons = [reason for checks in scan_result.incomplete_rules.values() for reason in checks]
+        raise NovaEvaluationError(scan_result, reasons)
 
     # Check if blocked
     if scan_result.blocked:
@@ -133,6 +137,8 @@ def main():
         except NovaBlockedError as e:
             print(f"[BLOCKED] {e.message}")
             print(f"         Severity: {e.result.highest_severity}")
+        except NovaEvaluationError as e:
+            print(f"[INCOMPLETE] {e}")
         except Exception as e:
             print(f"[ERROR] {e}")
 

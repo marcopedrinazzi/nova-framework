@@ -6,6 +6,7 @@ import inspect
 
 from nova.core.decision import NovaEvaluationError
 from .exceptions import NovaBlockedError, NovaConfigError
+from .policy import Action
 from .result import ScanResult
 
 
@@ -30,6 +31,9 @@ def protect_decision(nova, func, action, severity, param_name, on_block, raise_o
                 skip_llm, skip_decision, state_factory):
     signature = inspect.signature(func)
     named, var_keyword = _scan_parameter(func, signature, param_name)
+    scan_options = {"skip_decision": skip_decision, "skip_llm": skip_llm}
+    if action == Action.BLOCK and severity:
+        scan_options["_block_severity"] = severity
 
     def arguments_holding_text(bound):
         return bound.arguments if named else bound.arguments.setdefault(var_keyword, {})
@@ -63,14 +67,14 @@ def protect_decision(nova, func, action, severity, param_name, on_block, raise_o
     @functools.wraps(func)
     def sync_wrapper(*args, **kwargs):
         bound, text, state = prepare(args, kwargs)
-        result = nova.scan(text, decision_state=state, skip_decision=skip_decision, skip_llm=skip_llm)
+        result = nova.scan(text, decision_state=state, **scan_options)
         proceed, response = check(result, bound)
         return func(*bound.args, **bound.kwargs) if proceed else response
 
     @functools.wraps(func)
     async def async_wrapper(*args, **kwargs):
         bound, text, state = prepare(args, kwargs)
-        result = await nova.scan_async(text, decision_state=state, skip_decision=skip_decision, skip_llm=skip_llm)
+        result = await nova.scan_async(text, decision_state=state, **scan_options)
         proceed, response = check(result, bound)
         return await func(*bound.args, **bound.kwargs) if proceed else response
 

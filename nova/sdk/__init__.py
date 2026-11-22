@@ -22,7 +22,9 @@ Example:
 
     # Scan a prompt
     result = nova.scan(user_input)
-    if result.blocked:
+    if not result.evaluation_complete:
+        print(f"Evaluation incomplete: {result.incomplete_rules}")
+    elif result.blocked:
         print("Blocked!")
     else:
         clean_text = result.sanitized_text

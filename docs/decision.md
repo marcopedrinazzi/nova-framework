@@ -142,7 +142,9 @@ is not proof of compromise.
 In the Python SDK, a keyword or semantic match whose policy action is `BLOCK`
 skips remaining Decision and LLM calls, following the existing LLM evaluation
 behavior. The scan returns the confirmed block; pending Decision checks are marked
-`skipped` with reason `early_block`. A `FLAG` match does not stop model evaluation.
+`skipped` with reason `early_block`. With `protect(action="block", severity=...)`,
+the match must also meet the decorator's severity threshold to stop the scan early.
+A `FLAG` match does not stop model evaluation.
 
 ## SDK and explicit context
 
